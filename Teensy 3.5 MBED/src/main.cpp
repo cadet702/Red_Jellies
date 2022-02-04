@@ -155,7 +155,7 @@ int whichSensor(int sensor_a_value, int sensor_b_value) {
 int GetVAl(int d, int mn, int mx, int slop) {
   d = constrain(d, mn,mx);
   int t = mx - mn;
-  t /= 2;
+  t = t>>1; // equivelant of: t /= 2;
   t += mn;
   if(d < (t + slop) && d > (t - slop))
      d = SBUS_MID_OFFSET;
@@ -220,7 +220,7 @@ int main() {
   byte bookmark_set = 0;
   for (int address = 0 ; address < EEPROM.length() ; address += 4) {
     if (EEPROM.read(address) == 0 && bookmark_set == 0) {
-      eeprom_bookmark = address/4; // int division is fine because address should always be a multiple of 4
+      eeprom_bookmark = address>>2; // int division is fine because address should always be a multiple of 4 (code is equielant of: eeprom_bookmark = address/4; )
       bookmark_set = 1;
     }
   }
