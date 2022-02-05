@@ -2,12 +2,12 @@
 
 #include <EEPROM.h> // +0% pgm +0% mem // See: https://www.pjrc.com/teensy/td_libs_EEPROM.html
 
-// 51.15 and 971.85 make the best use of sensors with a 0.25V to 4.75V range.
-#define RC_CHANNEL_MIN_X  230 // formerly 51, 232
-#define RC_CHANNEL_MAX_X 932 // formerly 970, 930
-#define RC_CHANNEL_MIN_Y  230 // formerly 51, 232
-#define RC_CHANNEL_MAX_Y 932 // formerly 970, 930
-// The two lines below only work for sensors with an output range contained in 0.25V to 4.75V
+// ~232 and ~930 make the best use of sensors with a 0.75V to 3.00V range.
+#define RC_CHANNEL_MIN_X  230 // formerly 232
+#define RC_CHANNEL_MAX_X 932 // formerly 930
+#define RC_CHANNEL_MIN_Y  230 // formerly 232
+#define RC_CHANNEL_MAX_Y 932 // formerly 930
+// The two lines below only work for sensors with an output range contained in 0.165V to 3.135V
 #define ERR_BOUNDRY_MIN 24  // Used to detect if any sensor fails to a short
 #define ERR_BOUNDRY_MAX 998 // Used to detect if any sensor fails open
 #define SLOP_X 15 // formerly 15
@@ -43,6 +43,7 @@ const byte PIN_BUTTON_LAND       = 24; // (auto land) interrupts not yet support
 
 // OTHER PINS:
 const byte PIN_LED_ALERT         = 36; // LED_BUILTIN
+const byte PIN_SD_TBD            = 7; // a button to ... something with SD card...
 const byte PIN_LED_RESET         = 8; // a button to turn off the warning LED...
 
 int r_out_a = 0;
@@ -86,6 +87,7 @@ int aInputMin[8] = {
 };
 
 // Funciton decleration
+void userButtonISR();
 int buttonPressed(byte buttonPinNum);
 int checkForError(byte pin_num, int mn, int mx, byte aInput_num);
 int whichSensor(int sensor_a_value, int sensor_b_value);
@@ -93,6 +95,12 @@ int GetVAl(int d, int mn, int mx, int slop);
 void sbusPreparePacket(uint8_t packet[], int channels[], bool isSignalLoss, bool isFailsafe);
 int main();
 
+// Function called when user button is pressed
+void userButtonISR() {
+  digitalWriteFast(PIN_LED_ALERT, LOW); // gets comiled down to an atomic instruction (I believe)
+  digitalWriteFast(LED_BUILTIN,   LOW); // gets comiled down to an atomic instruction (I believe)
+  enable_blink = 0;
+}
 
 // Generic function to check if a button is pressed (allows ANY pins!)
 int buttonPressed(byte buttonPinNum) {
@@ -254,6 +262,9 @@ int main() {
   //Serial.begin(9600);
   Serial1.begin(100000, SERIAL_8E2);
 
+  // Attach Interrupt to user button
+  attachInterrupt(digitalPinToInterrupt(PIN_LED_RESET), userButtonISR, FALLING);
+
   while (1) { // Loop Forever:
     uint32_t currentMillis = millis();
 
@@ -317,12 +328,6 @@ int main() {
     rcChannels[13] = SBUS_MID_OFFSET; // channel 14
     rcChannels[14] = SBUS_MID_OFFSET; // channel 15
     rcChannels[15] = SBUS_MID_OFFSET; // channel 16
-
-    if (buttonPressed(PIN_LED_RESET)) {
-      digitalWrite(PIN_LED_ALERT, LOW);
-      digitalWrite(LED_BUILTIN,   LOW);
-      enable_blink = 0;
-    }
 
     if (currentMillis > blinkTime && enable_blink == 1) {
       digitalWrite(PIN_LED_ALERT, !digitalRead(PIN_LED_ALERT)); // toggle the LED
