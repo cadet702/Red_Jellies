@@ -100,6 +100,7 @@ void userButtonISR() {
   digitalWriteFast(PIN_LED_ALERT, LOW); // gets comiled down to an atomic instruction (I believe)
   digitalWriteFast(LED_BUILTIN,   LOW); // gets comiled down to an atomic instruction (I believe)
   enable_blink = 0;
+  //Serial.println(F("Ignore LED button pressed")); // REMOVE THIS TEMPORARY CODE (used to check for bounce)
 }
 
 // Generic function to check if a button is pressed (allows ANY pins!)
@@ -131,8 +132,8 @@ int checkForError(byte pin_num, int mn, int mx, byte aInput_num){
     }
     if (logIt == 1) {
       // turn on the LED to alert the user of a NEW error and disable blink
-      digitalWrite(PIN_LED_ALERT, HIGH);
-      digitalWrite(LED_BUILTIN,   HIGH);
+      digitalWriteFast(PIN_LED_ALERT, HIGH);
+      digitalWriteFast(LED_BUILTIN,   HIGH);
       enable_blink = 0;
       // now log the error
       EEPROM.update(eeprom_bookmark*4, eeprom_bookmark+1); // This is the error number
@@ -239,31 +240,37 @@ int main() {
   }
 
   pinMode(LED_BUILTIN, OUTPUT);
-  digitalWrite(LED_BUILTIN, LOW);
+  digitalWriteFast(LED_BUILTIN, LOW);
   
   pinMode(PIN_LED_ALERT, OUTPUT);
-  digitalWrite(PIN_LED_ALERT, LOW);
+  digitalWriteFast(PIN_LED_ALERT, LOW);
   
   pinMode(PIN_BUTTON_RIGHT, INPUT_PULLUP);
-  digitalWrite(PIN_BUTTON_RIGHT, HIGH);
+  digitalWriteFast(PIN_BUTTON_RIGHT, HIGH);
   
   pinMode(PIN_BUTTON_LEFT, INPUT_PULLUP);
-  digitalWrite(PIN_BUTTON_LEFT, HIGH);
+  digitalWriteFast(PIN_BUTTON_LEFT, HIGH);
 
   pinMode(PIN_BUTTON_DMS, INPUT_PULLUP);
-  digitalWrite(PIN_BUTTON_DMS, HIGH);
+  digitalWriteFast(PIN_BUTTON_DMS, HIGH);
 
   pinMode(PIN_BUTTON_LAND, INPUT_PULLUP);
-  digitalWrite(PIN_BUTTON_LAND, HIGH);
+  digitalWriteFast(PIN_BUTTON_LAND, HIGH);
+
+  pinMode(PIN_SD_TBD, INPUT_PULLUP);
+  digitalWriteFast(PIN_SD_TBD, HIGH);  
 
   pinMode(PIN_LED_RESET, INPUT_PULLUP);
-  digitalWrite(PIN_LED_RESET, HIGH);  
+  digitalWriteFast(PIN_LED_RESET, HIGH);  
 
-  //Serial.begin(9600);
+  Serial.begin(9600);
   Serial1.begin(100000, SERIAL_8E2);
 
   // Attach Interrupt to user button
   attachInterrupt(digitalPinToInterrupt(PIN_LED_RESET), userButtonISR, FALLING);
+
+  // Set the ADC resolution to 12 bits
+  // analogReadResolution(12)
 
   while (1) { // Loop Forever:
     uint32_t currentMillis = millis();
@@ -330,8 +337,8 @@ int main() {
     rcChannels[15] = SBUS_MID_OFFSET; // channel 16
 
     if (currentMillis > blinkTime && enable_blink == 1) {
-      digitalWrite(PIN_LED_ALERT, !digitalRead(PIN_LED_ALERT)); // toggle the LED
-      digitalWrite(LED_BUILTIN,   !digitalRead(LED_BUILTIN));   // toggle the LED
+      digitalWriteFast(PIN_LED_ALERT, !digitalRead(PIN_LED_ALERT)); // toggle the LED
+      digitalWriteFast(LED_BUILTIN,   !digitalRead(LED_BUILTIN));   // toggle the LED
       blinkTime += LED_BLINK_RATE; //blinkTime = currentMillis + LED_BLINK_RATE;
     }
     
@@ -340,6 +347,13 @@ int main() {
       //This will write it to the serial out TX/RX
       Serial1.write(sbusPacket, SBUS_PACKET_LENGTH);
       sbusTime = currentMillis + SBUS_UPDATE_RATE;
+    }
+
+    if (buttonPressed(PIN_SD_TBD)) {
+      // 1. check for SD card presence
+      // 2. if found, copy data, validate copy, notify user (success)
+      // 2. else notify user (failure)
+      Serial.println(F("SD card button pressed")); // place holder
     }
   }
 }
