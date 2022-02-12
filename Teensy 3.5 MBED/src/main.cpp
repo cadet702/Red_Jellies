@@ -1,6 +1,6 @@
 #include <Arduino.h>
-
 #include <EEPROM.h> // +0% pgm +0% mem // See: https://www.pjrc.com/teensy/td_libs_EEPROM.html
+#include <SdFat.h>
 
 // ~232 and ~930 make the best use of sensors with a 0.75V to 3.00V range.
 #define RC_CHANNEL_MIN_X  230 // formerly 232
@@ -43,7 +43,7 @@ const byte PIN_BUTTON_LAND       = 24; // (auto land) interrupts not yet support
 
 // OTHER PINS:
 const byte PIN_LED_ALERT         = 36; // LED_BUILTIN
-const byte PIN_SD_TBD            = 7; // a button to ... something with SD card...
+//const byte PIN_SD_TBD            = 7; // a button to ... something with SD card...
 const byte PIN_LED_RESET         = 8; // a button to turn off the warning LED...
 
 int r_out_a = 0;
@@ -257,8 +257,8 @@ int main() {
   pinMode(PIN_BUTTON_LAND, INPUT_PULLUP);
   digitalWriteFast(PIN_BUTTON_LAND, HIGH);
 
-  pinMode(PIN_SD_TBD, INPUT_PULLUP);
-  digitalWriteFast(PIN_SD_TBD, HIGH);  
+  //pinMode(PIN_SD_TBD, INPUT_PULLUP);
+  //digitalWriteFast(PIN_SD_TBD, HIGH);  
 
   pinMode(PIN_LED_RESET, INPUT_PULLUP);
   digitalWriteFast(PIN_LED_RESET, HIGH);  
@@ -349,11 +349,13 @@ int main() {
       sbusTime = currentMillis + SBUS_UPDATE_RATE;
     }
 
+    /*
     if (buttonPressed(PIN_SD_TBD)) {
       // 1. check for SD card presence
       // 2. if found, copy data, validate copy, notify user (success)
       // 2. else notify user (failure)
       Serial.println(F("SD card button pressed")); // place holder
     }
+    */
   }
 }
