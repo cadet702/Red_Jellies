@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <EEPROM.h> // +0% pgm +0% mem // See: https://www.pjrc.com/teensy/td_libs_EEPROM.html
 #include <SdFat.h>
+#include "db_8_bit.h" // Ultimate debounce code as a library based on: https://hackaday.com/2015/12/10/embed-with-elliot-debounce-your-noisy-buttons-part-ii/#more-180185
 
 // ~232 and ~930 make the best use of sensors with a 0.75V to 3.00V range.
 #define RC_CHANNEL_MIN_X  230 // formerly 232
