@@ -92,7 +92,7 @@ void userButtonISR();
 int buttonPressed(byte buttonPinNum);
 int checkForError(byte pin_num, int mn, int mx, byte aInput_num);
 int whichSensor(int sensor_a_value, int sensor_b_value);
-int GetVAl(int d, int mn, int mx, int slop);
+int GetVAl(int d, int mn, int mx, int slop); // FIX: make name of function more descriptive
 void sbusPreparePacket(uint8_t packet[], int channels[], bool isSignalLoss, bool isFailsafe);
 int main();
 
@@ -248,6 +248,7 @@ int main() {
   
   pinMode(PIN_BUTTON_RIGHT, INPUT_PULLUP);
   digitalWriteFast(PIN_BUTTON_RIGHT, HIGH);
+  db_8_bit button1(PIN_BUTTON_RIGHT);
   
   pinMode(PIN_BUTTON_LEFT, INPUT_PULLUP);
   digitalWriteFast(PIN_BUTTON_LEFT, HIGH);
@@ -314,6 +315,12 @@ int main() {
     rcChannels[5] = SBUS_MIN_OFFSET;
     if(!digitalRead(PIN_BUTTON_RIGHT)) {
       rcChannels[5] = SBUS_MAX_OFFSET;
+    }
+
+    // Example usage
+    if(button1.is_button_down())
+    {
+      Serial.print(F("This happened!!"));
     }
 
     /* Channel 7 */

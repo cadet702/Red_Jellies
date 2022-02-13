@@ -13,15 +13,17 @@ https://hackaday.com/2015/12/10/embed-with-elliot-debounce-your-noisy-buttons-pa
 class db_8_bit
 {
   public:
-    void update_button(uint8_t *button_history);
-    uint8_t is_button_pressed(uint8_t *button_history, uint8_t bit_mask_8);
-    uint8_t is_button_released(uint8_t *button_history, uint8_t bit_mask_8);
-    uint8_t is_button_down(uint8_t *button_history);
-    uint8_t is_button_up(uint8_t *button_history);
+    db_8_bit();
+    db_8_bit(uint8_t pin_number, uint8_t initialButtonHistory);
+    void update_button();
+    uint8_t is_button_pressed();
+    uint8_t is_button_released();
+    uint8_t is_button_down();
+    uint8_t is_button_up();
   private:
     uint8_t mask_bits(uint8_t *button_history, uint8_t bit_mask_8);
-    uint8_t read_button();
-    int _pin;
+    uint8_t m_iPin;
+    uint8_t* m_iButtonHistory;
 };
 
 #endif
