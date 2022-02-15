@@ -11,6 +11,11 @@ db_8_bit::db_8_bit(){
     *m_iButtonHistory = 0b00000000;
 }
 
+db_8_bit::db_8_bit(uint8_t pin_number = 8){
+    m_iPin = pin_number;
+    *m_iButtonHistory = 0b00000000;
+}
+
 db_8_bit::db_8_bit(uint8_t pin_number = 8, uint8_t initialButtonHistory = 0b00000000){
     m_iPin = pin_number;
     *m_iButtonHistory = initialButtonHistory;

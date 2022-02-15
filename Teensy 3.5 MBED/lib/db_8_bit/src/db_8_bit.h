@@ -14,6 +14,7 @@ class db_8_bit
 {
   public:
     db_8_bit();
+    db_8_bit(uint8_t pin_number);
     db_8_bit(uint8_t pin_number, uint8_t initialButtonHistory);
     void update_button();
     uint8_t is_button_pressed();

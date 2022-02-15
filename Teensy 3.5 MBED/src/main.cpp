@@ -11,8 +11,8 @@
 // The two lines below only work for sensors with an output range contained in 0.165V to 3.135V
 #define ERR_BOUNDRY_MIN 24  // Used to detect if any sensor fails to a short
 #define ERR_BOUNDRY_MAX 998 // Used to detect if any sensor fails open
-#define SLOP_X 15 // formerly 15
-#define SLOP_Y 15 // formerly 15
+#define SLOP_X 5 // formerly 15
+#define SLOP_Y 5 // formerly 15
 #define SBUS_MIN_OFFSET 173
 #define SBUS_MID_OFFSET 992
 #define SBUS_MAX_OFFSET 1811
@@ -44,13 +44,13 @@ const byte PIN_BUTTON_LAND       = 24; // (auto land) interrupts not yet support
 
 // OTHER PINS:
 const byte PIN_LED_ALERT         = 36; // LED_BUILTIN
-//const byte PIN_SD_TBD            = 7; // a button to ... something with SD card...
-const byte PIN_LED_RESET         = 8; // a button to turn off the warning LED...
+const byte PIN_SD_LED            = 37; // LED used for indicating SD card related status
+const byte PIN_LED_RESET         = 8;  // a button to turn off the warning LED...
 
 int r_out_a = 0;
-int r_out_b = 0; // NOT Used
+int r_out_b = 0; // low priority if short on pins
 int y_out_a = 0;
-int y_out_b = 0; // NOT Used
+int y_out_b = 0; // low priority if short on pins
 int p_out_a = 0;
 int p_out_b = 0;
 int t_out_a = 0;
@@ -64,6 +64,12 @@ int t_out = 0;
 int address = 0;
 byte eeprom_bookmark = 0; // defaults to 0 if EEPROM has no available slots.
 byte enable_blink = 0;
+bool is_SD_inserted = 0; // flag indicating if a micro SD card is present
+
+// Use Teensy SDIO
+#define SD_CONFIG  SdioConfig(FIFO_SDIO)
+SdFs sd;
+FsFile file;
 
 int aInputMax[8] = {
   SBUS_MID_OFFSET,
@@ -245,10 +251,13 @@ int main() {
   
   pinMode(PIN_LED_ALERT, OUTPUT);
   digitalWriteFast(PIN_LED_ALERT, LOW);
+
+  pinMode(PIN_SD_LED, OUTPUT);
+  digitalWriteFast(PIN_SD_LED, LOW);
   
   pinMode(PIN_BUTTON_RIGHT, INPUT_PULLUP);
   digitalWriteFast(PIN_BUTTON_RIGHT, HIGH);
-  db_8_bit button1(PIN_BUTTON_RIGHT);
+  //db_8_bit button1(PIN_BUTTON_RIGHT);
   
   pinMode(PIN_BUTTON_LEFT, INPUT_PULLUP);
   digitalWriteFast(PIN_BUTTON_LEFT, HIGH);
@@ -258,9 +267,6 @@ int main() {
 
   pinMode(PIN_BUTTON_LAND, INPUT_PULLUP);
   digitalWriteFast(PIN_BUTTON_LAND, HIGH);
-
-  //pinMode(PIN_SD_TBD, INPUT_PULLUP);
-  //digitalWriteFast(PIN_SD_TBD, HIGH);  
 
   pinMode(PIN_LED_RESET, INPUT_PULLUP);
   digitalWriteFast(PIN_LED_RESET, HIGH);  
@@ -272,7 +278,23 @@ int main() {
   attachInterrupt(digitalPinToInterrupt(PIN_LED_RESET), userButtonISR, FALLING);
 
   // Set the ADC resolution to 12 bits
-  // analogReadResolution(12)
+  // analogReadResolution(12);
+  analogReadAveraging(16);
+
+  // Check for presence of SD card:
+  if (!sd.cardBegin(SD_CONFIG)) {
+    digitalWriteFast(PIN_SD_LED, LOW);
+    is_SD_inserted = 0;
+    Serial.print(F("\nSD initialization failed.\nDo not reformat the card!\nIs the card correctly inserted?\nIs there a wiring/soldering problem?\n"));
+    sd.initErrorHalt(&Serial);
+    if (isSpi(SD_CONFIG)) {
+      Serial.print(F("Is SD_CS_PIN set to the correct value?\nDoes another SPI device need to be disabled?\n"));
+    }
+  }
+  else {
+    digitalWriteFast(PIN_SD_LED, HIGH);
+    is_SD_inserted = 1;
+  }
 
   while (1) { // Loop Forever:
     uint32_t currentMillis = millis();
@@ -317,11 +339,13 @@ int main() {
       rcChannels[5] = SBUS_MAX_OFFSET;
     }
 
-    // Example usage
+    /*
+    // Example library usage
     if(button1.is_button_down())
     {
       Serial.print(F("This happened!!"));
     }
+    */
 
     /* Channel 7 */
     rcChannels[6] = SBUS_MAX_OFFSET;
