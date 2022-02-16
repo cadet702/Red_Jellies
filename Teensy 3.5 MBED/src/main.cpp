@@ -100,7 +100,7 @@ void userButtonISR();
 int buttonPressed(byte buttonPinNum);
 int checkForError(byte pin_num, int min_allowed, int max_allowed, byte aInput_num);
 int whichSensor(int sensor_a_value, int sensor_b_value, int midpoint);
-int sensorValue_2_SBUS_Value(int d, int min_num, int max_num, int midpoint, int slop); // FIX: make name of function more descriptive
+int sensorValue_2_SBUS_Value(int d, int min_num, int max_num, int midpoint, int slop);
 void sbusPreparePacket(uint8_t packet[], int channels[], bool isSignalLoss, bool isFailsafe);
 int main();
 
@@ -284,15 +284,19 @@ int main() {
   if (!sd.cardBegin(SD_CONFIG)) {
     digitalWriteFast(PIN_SD_LED, LOW);
     is_SD_inserted = 0;
-    Serial.print(F("\nSD initialization failed.\nDo not reformat the card!\nIs the card correctly inserted?\nIs there a wiring/soldering problem?\n"));
+    Serial.print(F("\nSD initialization failed.\nEntering operation mode.\n\nInitilization error displayed below:\n"));
     sd.initErrorHalt(&Serial);
-    if (isSpi(SD_CONFIG)) {
-      Serial.print(F("Is SD_CS_PIN set to the correct value?\nDoes another SPI device need to be disabled?\n"));
-    }
+    // GOTO main loop?
   }
   else {
     digitalWriteFast(PIN_SD_LED, HIGH);
     is_SD_inserted = 1;
+    // Separate while(1) loop?
+    // Check EEPROM log for data
+
+    // Attempt to copy data to micro SC card
+    // Failure? --> Notify user, button to retry.
+    // Success? --> Validate data
   }
 
   while (1) { // Loop Forever:
@@ -379,14 +383,5 @@ int main() {
       Serial1.write(sbusPacket, SBUS_PACKET_LENGTH);
       sbusTime = currentMillis + SBUS_UPDATE_RATE;
     }
-
-    /*
-    if (buttonPressed(PIN_SD_TBD)) {
-      // 1. check for SD card presence
-      // 2. if found, copy data, validate copy, notify user (success)
-      // 2. else notify user (failure)
-      Serial.println(F("SD card button pressed")); // place holder
-    }
-    */
   }
 }
