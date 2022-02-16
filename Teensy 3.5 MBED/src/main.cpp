@@ -306,25 +306,19 @@ int main() {
       p_out = whichSensor(p_out_a, p_out_b, y_midpoint);
       t_out = whichSensor(t_out_a, t_out_b, y_midpoint);
 
-      /* Channel 1 */
-      rcChannels[0] = sensorValue_2_SBUS_Value(r_out, RC_CHANNEL_MIN_X, RC_CHANNEL_MAX_X, x_midpoint, SLOP_X);  // channel 1
+      // Radio Channels 1-4
+      rcChannels[0] = sensorValue_2_SBUS_Value(r_out, RC_CHANNEL_MIN_X, RC_CHANNEL_MAX_X, x_midpoint, SLOP_X);  // Channel 1
+      rcChannels[1] = sensorValue_2_SBUS_Value(p_out, RC_CHANNEL_MIN_Y, RC_CHANNEL_MAX_Y, y_midpoint, SLOP_Y);  // Channel 2
+      rcChannels[2] = sensorValue_2_SBUS_Value(t_out, RC_CHANNEL_MIN_Y, RC_CHANNEL_MAX_Y, y_midpoint, SLOP_Y);  // Channel 3
+      rcChannels[3] = sensorValue_2_SBUS_Value(y_out, RC_CHANNEL_MIN_X, RC_CHANNEL_MAX_X, x_midpoint, SLOP_X);  // Channel 4
 
-      /* Channel 2 */
-      rcChannels[1] = sensorValue_2_SBUS_Value(p_out, RC_CHANNEL_MIN_Y, RC_CHANNEL_MAX_Y, y_midpoint, SLOP_Y);  // channel 2
-
-      /* Channel 3 */
-      rcChannels[2] = sensorValue_2_SBUS_Value(t_out, RC_CHANNEL_MIN_Y, RC_CHANNEL_MAX_Y, y_midpoint, SLOP_Y);  // channel 3
-
-      /* Channel 4 */
-      rcChannels[3] = sensorValue_2_SBUS_Value(y_out, RC_CHANNEL_MIN_X, RC_CHANNEL_MAX_X, x_midpoint,SLOP_X);  // channel 4
-
-      /* Channel 5 */
+      // Channel 5
       rcChannels[4] = SBUS_MIN_OFFSET;
       if(!digitalRead(PIN_BUTTON_LEFT)) {
         rcChannels[4] = SBUS_MAX_OFFSET;
       }
 
-      /* Channel 6 */
+      // Channel 6
       rcChannels[5] = SBUS_MIN_OFFSET;
       if(!digitalRead(PIN_BUTTON_RIGHT)) {
         rcChannels[5] = SBUS_MAX_OFFSET;
@@ -338,36 +332,36 @@ int main() {
       }
       */
 
-      /* Channel 7 */
+      // Channel 7
       rcChannels[6] = SBUS_MAX_OFFSET;
       if(!digitalRead(PIN_BUTTON_DMS)) {
         rcChannels[6] = SBUS_MIN_OFFSET;
       }
 
-      /* Channel 8 */
+      // Channel 8
       rcChannels[7] = SBUS_MIN_OFFSET;
       if(!digitalRead(PIN_BUTTON_LAND)) {
         rcChannels[7] = SBUS_MAX_OFFSET;
       }
 
-      rcChannels[8]  = SBUS_MID_OFFSET; // channel  9
-      rcChannels[9]  = SBUS_MID_OFFSET; // channel 10
-      rcChannels[10] = SBUS_MID_OFFSET; // channel 11
-      rcChannels[11] = SBUS_MID_OFFSET; // channel 12
-      rcChannels[12] = SBUS_MID_OFFSET; // channel 13
-      rcChannels[13] = SBUS_MID_OFFSET; // channel 14
-      rcChannels[14] = SBUS_MID_OFFSET; // channel 15
-      rcChannels[15] = SBUS_MID_OFFSET; // channel 16
+      rcChannels[8]  = SBUS_MID_OFFSET; // Channel  9
+      rcChannels[9]  = SBUS_MID_OFFSET; // Channel 10
+      rcChannels[10] = SBUS_MID_OFFSET; // Channel 11
+      rcChannels[11] = SBUS_MID_OFFSET; // Channel 12
+      rcChannels[12] = SBUS_MID_OFFSET; // Channel 13
+      rcChannels[13] = SBUS_MID_OFFSET; // Channel 14
+      rcChannels[14] = SBUS_MID_OFFSET; // Channel 15
+      rcChannels[15] = SBUS_MID_OFFSET; // Channel 16
 
       if (currentMillis > blinkTime && enable_blink == 1) {
         digitalWriteFast(PIN_LED_ALERT, !digitalRead(PIN_LED_ALERT)); // toggle the LED
         digitalWriteFast(LED_BUILTIN,   !digitalRead(LED_BUILTIN));   // toggle the LED
-        blinkTime += LED_BLINK_RATE; //blinkTime = currentMillis + LED_BLINK_RATE;
+        blinkTime += LED_BLINK_RATE; // blinkTime = currentMillis + LED_BLINK_RATE;
       }
       
       if (currentMillis > sbusTime) {
         sbusPreparePacket(sbusPacket, rcChannels, false, false);
-        //This will write it to the serial out TX/RX
+        // This will write it to the serial out TX/RX
         Serial1.write(sbusPacket, SBUS_PACKET_LENGTH);
         sbusTime = currentMillis + SBUS_UPDATE_RATE;
       }
