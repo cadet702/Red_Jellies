@@ -8,6 +8,8 @@
 #define RC_CHANNEL_MAX_X 932 // formerly 930
 #define RC_CHANNEL_MIN_Y  230 // formerly 232
 #define RC_CHANNEL_MAX_Y 932 // formerly 930
+const int x_midpoint = (RC_CHANNEL_MIN_X + RC_CHANNEL_MAX_X)/2;
+const int y_midpoint = (RC_CHANNEL_MIN_Y + RC_CHANNEL_MAX_Y)/2;
 // The two lines below only work for sensors with an output range contained in 0.165V to 3.135V
 #define ERR_BOUNDRY_MIN 24  // Used to detect if any sensor fails to a short
 #define ERR_BOUNDRY_MAX 998 // Used to detect if any sensor fails open
@@ -96,9 +98,9 @@ int aInputMin[8] = {
 // Funciton decleration
 void userButtonISR();
 int buttonPressed(byte buttonPinNum);
-int checkForError(byte pin_num, int mn, int mx, byte aInput_num);
-int whichSensor(int sensor_a_value, int sensor_b_value);
-int GetVAl(int d, int mn, int mx, int slop); // FIX: make name of function more descriptive
+int checkForError(byte pin_num, int min_allowed, int max_allowed, byte aInput_num);
+int whichSensor(int sensor_a_value, int sensor_b_value, int midpoint);
+int sensorValue_2_SBUS_Value(int d, int min_num, int max_num, int midpoint, int slop); // FIX: make name of function more descriptive
 void sbusPreparePacket(uint8_t packet[], int channels[], bool isSignalLoss, bool isFailsafe);
 int main();
 
@@ -122,17 +124,17 @@ int buttonPressed(byte buttonPinNum) {
 }
 
 // Function to check the analog values for errors, log the most extreme examples, and return the analog reading
-int checkForError(byte pin_num, int mn, int mx, byte aInput_num){
+int checkForError(byte pin_num, int min_allowed, int max_allowed, byte aInput_num){
   int value = analogRead(pin_num);
-  if(!(value <= mx && value >= mn)){ // if not in bounds, you have a problem
+  if(!(value <= max_allowed && value >= min_allowed)){ // if not in bounds, you have a problem
     // Default to not logging the issue unless it's the most extreme one for this channel during this run.
     byte logIt = 0;
-    if (value > mx && value > aInputMax[aInput_num - 1]) {
+    if (value > max_allowed && value > aInputMax[aInput_num - 1]) {
       // This is a problem and it's the biggest you've seen yet.  So log it!
       aInputMax[aInput_num - 1] = value;
       logIt = 1;
     }
-    if (value < mn && value < aInputMin[aInput_num - 1]) {
+    if (value < min_allowed && value < aInputMin[aInput_num - 1]) {
       // This is a problem and it's the smallest you've seen yet.  So log it!
       aInputMin[aInput_num - 1] = value;
       logIt = 1;
@@ -153,12 +155,12 @@ int checkForError(byte pin_num, int mn, int mx, byte aInput_num){
 }
 
 // Combine two sensor inputs and return the one that is closer to "center"
-int whichSensor(int sensor_a_value, int sensor_b_value) {
+int whichSensor(int sensor_a_value, int sensor_b_value, int midpoint = x_midpoint) {
   // NOTE: Because of the way the abs() function is implemented, avoid using other functions inside the brackets, it may lead to incorrect results.
   int abs_sesnor_a;
   int abs_sesnor_b;
-  abs_sesnor_a = sensor_a_value - 581; // FIX: redefine 581 (or 511) as the center point between min and max values
-  abs_sesnor_b = sensor_b_value - 581; // FIX: redefine 581 (or 511) as the center point between min and max values
+  abs_sesnor_a = sensor_a_value - midpoint;
+  abs_sesnor_b = sensor_b_value - midpoint;
   if(abs(abs_sesnor_a) < abs(abs_sesnor_b)) {
     return sensor_a_value;
   }
@@ -168,19 +170,16 @@ int whichSensor(int sensor_a_value, int sensor_b_value) {
 }
 
 // Calculation for using the analog inputs
-int GetVAl(int d, int mn, int mx, int slop) {
-  d = constrain(d, mn,mx);
-  int t = mx - mn;
-  t = t>>1; // equivelant of: t /= 2;
-  t += mn;
-  if(d < (t + slop) && d > (t - slop))
-     d = SBUS_MID_OFFSET;
+int sensorValue_2_SBUS_Value(int sensor_output, int min_num, int max_num, int midpoint, int slop) {
+  sensor_output = constrain(sensor_output, min_num,max_num);
+  if(sensor_output < (midpoint + slop) && sensor_output > (midpoint - slop))
+     sensor_output = SBUS_MID_OFFSET;
   else
-     d = map(d, mn, mx, SBUS_MIN_OFFSET, SBUS_MAX_OFFSET);
-  return d;
+     sensor_output = map(sensor_output, min_num, max_num, SBUS_MIN_OFFSET, SBUS_MAX_OFFSET);
+  return sensor_output;
 }
 
-//////////////////////////////////////////////////////
+// Combine the data from each of the channels with header and footer data
 void sbusPreparePacket(uint8_t packet[], int channels[], bool isSignalLoss, bool isFailsafe){
     static int output[SBUS_CHANNEL_NUMBER] = {0};
     for (uint8_t i = 0; i < SBUS_CHANNEL_NUMBER; i++) {
@@ -310,22 +309,22 @@ int main() {
     t_out_b = checkForError(PIN_ANALOG_THROTTLE_B, ERR_BOUNDRY_MIN, ERR_BOUNDRY_MAX, 8); // aInput 8
 
     // Calculate the final output for roll, yaw, pitch, and throttle
-    r_out = whichSensor(r_out_a, r_out_b);
-    y_out = whichSensor(y_out_a, y_out_b);
-    p_out = whichSensor(p_out_a, p_out_b);
-    t_out = whichSensor(t_out_a, t_out_b);
+    r_out = whichSensor(r_out_a, r_out_b, x_midpoint);
+    y_out = whichSensor(y_out_a, y_out_b, x_midpoint);
+    p_out = whichSensor(p_out_a, p_out_b, y_midpoint);
+    t_out = whichSensor(t_out_a, t_out_b, y_midpoint);
 
     /* Channel 1 */
-    rcChannels[0] = GetVAl(r_out, RC_CHANNEL_MIN_X, RC_CHANNEL_MAX_X, SLOP_X);  // channel 1
+    rcChannels[0] = sensorValue_2_SBUS_Value(r_out, RC_CHANNEL_MIN_X, RC_CHANNEL_MAX_X, x_midpoint, SLOP_X);  // channel 1
 
     /* Channel 2 */
-    rcChannels[1] = GetVAl(p_out, RC_CHANNEL_MIN_Y, RC_CHANNEL_MAX_Y, SLOP_Y);  // channel 2
+    rcChannels[1] = sensorValue_2_SBUS_Value(p_out, RC_CHANNEL_MIN_Y, RC_CHANNEL_MAX_Y, y_midpoint, SLOP_Y);  // channel 2
 
     /* Channel 3 */
-    rcChannels[2] = GetVAl(t_out, RC_CHANNEL_MIN_Y, RC_CHANNEL_MAX_Y, SLOP_Y);  // channel 3
+    rcChannels[2] = sensorValue_2_SBUS_Value(t_out, RC_CHANNEL_MIN_Y, RC_CHANNEL_MAX_Y, y_midpoint, SLOP_Y);  // channel 3
 
     /* Channel 4 */
-    rcChannels[3] = GetVAl(y_out, RC_CHANNEL_MIN_X, RC_CHANNEL_MAX_X, SLOP_X);  // channel 4
+    rcChannels[3] = sensorValue_2_SBUS_Value(y_out, RC_CHANNEL_MIN_X, RC_CHANNEL_MAX_X, x_midpoint,SLOP_X);  // channel 4
 
     /* Channel 5 */
     rcChannels[4] = SBUS_MIN_OFFSET;
