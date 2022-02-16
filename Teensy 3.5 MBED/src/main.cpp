@@ -286,102 +286,103 @@ int main() {
     is_SD_inserted = 0;
     Serial.print(F("\nSD initialization failed.\nEntering operation mode.\n\nInitilization error displayed below:\n"));
     sd.initErrorHalt(&Serial);
-    // GOTO main loop?
+    // Begin operation mode:
+    while (1) {
+      uint32_t currentMillis = millis();
+
+      // Store the analog input readings
+      r_out_a = checkForError(PIN_ANALOG_ROLL_A,     ERR_BOUNDRY_MIN, ERR_BOUNDRY_MAX, 1); // aInput 1
+      r_out_b = checkForError(PIN_ANALOG_ROLL_B,     ERR_BOUNDRY_MIN, ERR_BOUNDRY_MAX, 2); // aInput 2
+      y_out_a = checkForError(PIN_ANALOG_YAW_A,      ERR_BOUNDRY_MIN, ERR_BOUNDRY_MAX, 3); // aInput 3
+      y_out_b = checkForError(PIN_ANALOG_YAW_B,      ERR_BOUNDRY_MIN, ERR_BOUNDRY_MAX, 4); // aInput 4
+      p_out_a = checkForError(PIN_ANALOG_PITCH_A,    ERR_BOUNDRY_MIN, ERR_BOUNDRY_MAX, 5); // aInput 5
+      p_out_b = checkForError(PIN_ANALOG_PITCH_B,    ERR_BOUNDRY_MIN, ERR_BOUNDRY_MAX, 6); // aInput 6
+      t_out_a = checkForError(PIN_ANALOG_THROTTLE_A, ERR_BOUNDRY_MIN, ERR_BOUNDRY_MAX, 7); // aInput 7
+      t_out_b = checkForError(PIN_ANALOG_THROTTLE_B, ERR_BOUNDRY_MIN, ERR_BOUNDRY_MAX, 8); // aInput 8
+
+      // Calculate the final output for roll, yaw, pitch, and throttle
+      r_out = whichSensor(r_out_a, r_out_b, x_midpoint);
+      y_out = whichSensor(y_out_a, y_out_b, x_midpoint);
+      p_out = whichSensor(p_out_a, p_out_b, y_midpoint);
+      t_out = whichSensor(t_out_a, t_out_b, y_midpoint);
+
+      /* Channel 1 */
+      rcChannels[0] = sensorValue_2_SBUS_Value(r_out, RC_CHANNEL_MIN_X, RC_CHANNEL_MAX_X, x_midpoint, SLOP_X);  // channel 1
+
+      /* Channel 2 */
+      rcChannels[1] = sensorValue_2_SBUS_Value(p_out, RC_CHANNEL_MIN_Y, RC_CHANNEL_MAX_Y, y_midpoint, SLOP_Y);  // channel 2
+
+      /* Channel 3 */
+      rcChannels[2] = sensorValue_2_SBUS_Value(t_out, RC_CHANNEL_MIN_Y, RC_CHANNEL_MAX_Y, y_midpoint, SLOP_Y);  // channel 3
+
+      /* Channel 4 */
+      rcChannels[3] = sensorValue_2_SBUS_Value(y_out, RC_CHANNEL_MIN_X, RC_CHANNEL_MAX_X, x_midpoint,SLOP_X);  // channel 4
+
+      /* Channel 5 */
+      rcChannels[4] = SBUS_MIN_OFFSET;
+      if(!digitalRead(PIN_BUTTON_LEFT)) {
+        rcChannels[4] = SBUS_MAX_OFFSET;
+      }
+
+      /* Channel 6 */
+      rcChannels[5] = SBUS_MIN_OFFSET;
+      if(!digitalRead(PIN_BUTTON_RIGHT)) {
+        rcChannels[5] = SBUS_MAX_OFFSET;
+      }
+
+      /*
+      // Example library usage
+      if(button1.is_button_down())
+      {
+        Serial.print(F("This happened!!"));
+      }
+      */
+
+      /* Channel 7 */
+      rcChannels[6] = SBUS_MAX_OFFSET;
+      if(!digitalRead(PIN_BUTTON_DMS)) {
+        rcChannels[6] = SBUS_MIN_OFFSET;
+      }
+
+      /* Channel 8 */
+      rcChannels[7] = SBUS_MIN_OFFSET;
+      if(!digitalRead(PIN_BUTTON_LAND)) {
+        rcChannels[7] = SBUS_MAX_OFFSET;
+      }
+
+      rcChannels[8]  = SBUS_MID_OFFSET; // channel  9
+      rcChannels[9]  = SBUS_MID_OFFSET; // channel 10
+      rcChannels[10] = SBUS_MID_OFFSET; // channel 11
+      rcChannels[11] = SBUS_MID_OFFSET; // channel 12
+      rcChannels[12] = SBUS_MID_OFFSET; // channel 13
+      rcChannels[13] = SBUS_MID_OFFSET; // channel 14
+      rcChannels[14] = SBUS_MID_OFFSET; // channel 15
+      rcChannels[15] = SBUS_MID_OFFSET; // channel 16
+
+      if (currentMillis > blinkTime && enable_blink == 1) {
+        digitalWriteFast(PIN_LED_ALERT, !digitalRead(PIN_LED_ALERT)); // toggle the LED
+        digitalWriteFast(LED_BUILTIN,   !digitalRead(LED_BUILTIN));   // toggle the LED
+        blinkTime += LED_BLINK_RATE; //blinkTime = currentMillis + LED_BLINK_RATE;
+      }
+      
+      if (currentMillis > sbusTime) {
+        sbusPreparePacket(sbusPacket, rcChannels, false, false);
+        //This will write it to the serial out TX/RX
+        Serial1.write(sbusPacket, SBUS_PACKET_LENGTH);
+        sbusTime = currentMillis + SBUS_UPDATE_RATE;
+      }
+    }
   }
   else {
     digitalWriteFast(PIN_SD_LED, HIGH);
     is_SD_inserted = 1;
-    // Separate while(1) loop?
-    // Check EEPROM log for data
+    // Enter debug mode:
+    while (2) {
+      // Check EEPROM log for data
 
-    // Attempt to copy data to micro SC card
-    // Failure? --> Notify user, button to retry.
-    // Success? --> Validate data
-  }
-
-  while (1) { // Loop Forever:
-    uint32_t currentMillis = millis();
-
-    // Store the analog input readings
-    r_out_a = checkForError(PIN_ANALOG_ROLL_A,     ERR_BOUNDRY_MIN, ERR_BOUNDRY_MAX, 1); // aInput 1
-    r_out_b = checkForError(PIN_ANALOG_ROLL_B,     ERR_BOUNDRY_MIN, ERR_BOUNDRY_MAX, 2); // aInput 2
-    y_out_a = checkForError(PIN_ANALOG_YAW_A,      ERR_BOUNDRY_MIN, ERR_BOUNDRY_MAX, 3); // aInput 3
-    y_out_b = checkForError(PIN_ANALOG_YAW_B,      ERR_BOUNDRY_MIN, ERR_BOUNDRY_MAX, 4); // aInput 4
-    p_out_a = checkForError(PIN_ANALOG_PITCH_A,    ERR_BOUNDRY_MIN, ERR_BOUNDRY_MAX, 5); // aInput 5
-    p_out_b = checkForError(PIN_ANALOG_PITCH_B,    ERR_BOUNDRY_MIN, ERR_BOUNDRY_MAX, 6); // aInput 6
-    t_out_a = checkForError(PIN_ANALOG_THROTTLE_A, ERR_BOUNDRY_MIN, ERR_BOUNDRY_MAX, 7); // aInput 7
-    t_out_b = checkForError(PIN_ANALOG_THROTTLE_B, ERR_BOUNDRY_MIN, ERR_BOUNDRY_MAX, 8); // aInput 8
-
-    // Calculate the final output for roll, yaw, pitch, and throttle
-    r_out = whichSensor(r_out_a, r_out_b, x_midpoint);
-    y_out = whichSensor(y_out_a, y_out_b, x_midpoint);
-    p_out = whichSensor(p_out_a, p_out_b, y_midpoint);
-    t_out = whichSensor(t_out_a, t_out_b, y_midpoint);
-
-    /* Channel 1 */
-    rcChannels[0] = sensorValue_2_SBUS_Value(r_out, RC_CHANNEL_MIN_X, RC_CHANNEL_MAX_X, x_midpoint, SLOP_X);  // channel 1
-
-    /* Channel 2 */
-    rcChannels[1] = sensorValue_2_SBUS_Value(p_out, RC_CHANNEL_MIN_Y, RC_CHANNEL_MAX_Y, y_midpoint, SLOP_Y);  // channel 2
-
-    /* Channel 3 */
-    rcChannels[2] = sensorValue_2_SBUS_Value(t_out, RC_CHANNEL_MIN_Y, RC_CHANNEL_MAX_Y, y_midpoint, SLOP_Y);  // channel 3
-
-    /* Channel 4 */
-    rcChannels[3] = sensorValue_2_SBUS_Value(y_out, RC_CHANNEL_MIN_X, RC_CHANNEL_MAX_X, x_midpoint,SLOP_X);  // channel 4
-
-    /* Channel 5 */
-    rcChannels[4] = SBUS_MIN_OFFSET;
-    if(!digitalRead(PIN_BUTTON_LEFT)) {
-      rcChannels[4] = SBUS_MAX_OFFSET;
-    }
-
-    /* Channel 6 */
-    rcChannels[5] = SBUS_MIN_OFFSET;
-    if(!digitalRead(PIN_BUTTON_RIGHT)) {
-      rcChannels[5] = SBUS_MAX_OFFSET;
-    }
-
-    /*
-    // Example library usage
-    if(button1.is_button_down())
-    {
-      Serial.print(F("This happened!!"));
-    }
-    */
-
-    /* Channel 7 */
-    rcChannels[6] = SBUS_MAX_OFFSET;
-    if(!digitalRead(PIN_BUTTON_DMS)) {
-      rcChannels[6] = SBUS_MIN_OFFSET;
-    }
-
-    /* Channel 8 */
-    rcChannels[7] = SBUS_MIN_OFFSET;
-    if(!digitalRead(PIN_BUTTON_LAND)) {
-      rcChannels[7] = SBUS_MAX_OFFSET;
-    }
-
-    rcChannels[8]  = SBUS_MID_OFFSET; // channel  9
-    rcChannels[9]  = SBUS_MID_OFFSET; // channel 10
-    rcChannels[10] = SBUS_MID_OFFSET; // channel 11
-    rcChannels[11] = SBUS_MID_OFFSET; // channel 12
-    rcChannels[12] = SBUS_MID_OFFSET; // channel 13
-    rcChannels[13] = SBUS_MID_OFFSET; // channel 14
-    rcChannels[14] = SBUS_MID_OFFSET; // channel 15
-    rcChannels[15] = SBUS_MID_OFFSET; // channel 16
-
-    if (currentMillis > blinkTime && enable_blink == 1) {
-      digitalWriteFast(PIN_LED_ALERT, !digitalRead(PIN_LED_ALERT)); // toggle the LED
-      digitalWriteFast(LED_BUILTIN,   !digitalRead(LED_BUILTIN));   // toggle the LED
-      blinkTime += LED_BLINK_RATE; //blinkTime = currentMillis + LED_BLINK_RATE;
-    }
-    
-    if (currentMillis > sbusTime) {
-      sbusPreparePacket(sbusPacket, rcChannels, false, false);
-      //This will write it to the serial out TX/RX
-      Serial1.write(sbusPacket, SBUS_PACKET_LENGTH);
-      sbusTime = currentMillis + SBUS_UPDATE_RATE;
+      // Attempt to copy data to micro SC card
+      // Failure? --> Notify user, button to retry.
+      // Success? --> Validate data
     }
   }
 }
