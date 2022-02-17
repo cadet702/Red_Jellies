@@ -68,6 +68,26 @@ byte eeprom_bookmark = 0; // defaults to 0 if EEPROM has no available slots.
 byte enable_blink = 0;
 bool is_SD_inserted = 0; // flag indicating if a micro SD card is present
 
+// SD related variables:
+uint32_t previousMillisLED = 0;
+uint32_t previousMillisUserNote = 0;
+int brightness = 0; // how bright the LED is initially
+int fadeAmount = 1; // how many points to fade the LED by
+// states named for easy refference:
+#define SD_INIT    0 // flag indicating if the program should attempt to copy EEPROM to the micro SC card
+#define SD_COPY    1 // flag indicating copy in progress
+#define SD_VERIFY  2 // flag indicating data verification in progress
+#define SD_SUCCESS 3 // flag indicating copy success
+#define SD_ERROR   4 // flag indicating copy failure
+int stateSD = SD_INIT;
+
+// EEPROM Related variables
+uint8_t value;
+uint8_t err_num;
+uint8_t on_aInput_num;
+int invalid_int;
+//const int memSize = EEPROM.length(); // not currently used
+
 // Use Teensy SDIO
 #define SD_CONFIG  SdioConfig(FIFO_SDIO)
 SdFs sd;
@@ -95,9 +115,47 @@ int aInputMin[8] = {
   SBUS_MID_OFFSET
 };
 
+// EEPROM functions
+void clearEEPROM();
+void dumpLog2Serial();
+
+void clearEEPROM() {
+  Serial.print("Clearing EEPROM log now...\n");
+  for (int address = 0 ; address < EEPROM.length() ; address++) {
+    EEPROM.update(address, 0); // skip already "empty" addresses and write 0 to the others
+  }
+  Serial.print("EEPROM log erased\n");
+}
+
+void dumpLog2Serial() {
+//  for (int address = 0 ; (address + 3) < EEPROM.length() ; address++) {
+  for (int address = 0 ; address < EEPROM.length() ; address += 4) {
+    // read 4 bytes of data from the current address of the EEPROM
+    err_num       = EEPROM.get(address,   err_num);
+    on_aInput_num = EEPROM.get(address+1, on_aInput_num);
+    invalid_int   = EEPROM.get(address+2, invalid_int);
+
+    // Print the errors loged to EEPROM
+    if (err_num != 0) {
+      Serial.print("\nError number: \t\t\t\t");
+      Serial.println(err_num);
+      Serial.print("Analog input # (NOT pin) with error: \t");
+      Serial.println(on_aInput_num);
+      Serial.print("Invalid value recorded: \t\t");
+      Serial.println(invalid_int);
+      Serial.print("EEPROM Address: \t\t\t");
+      Serial.println(address);
+    }
+  }
+  // If you're about to reach beyond memsize, it's time to start over
+  address = 0;
+  Serial.println(F("Completed a pass through EEPROM"));
+}
+
 // Funciton decleration
-void userButtonISR();
-int buttonPressed(byte buttonPinNum);
+void ignoreErrorISR();
+void copyToMicroSD_ISR();
+bool buttonPressed(byte buttonPinNum); // TODO: remove if not used
 int checkForError(byte pin_num, int min_allowed, int max_allowed, byte aInput_num);
 int whichSensor(int sensor_a_value, int sensor_b_value, int midpoint);
 int sensorValue_2_SBUS_Value(int d, int min_num, int max_num, int midpoint, int slop);
@@ -105,15 +163,21 @@ void sbusPreparePacket(uint8_t packet[], int channels[], bool isSignalLoss, bool
 int main();
 
 // Function called when user button is pressed
-void userButtonISR() {
+void ignoreErrorISR() {
   digitalWriteFast(PIN_LED_ALERT, LOW); // gets comiled down to an atomic instruction (I believe)
   digitalWriteFast(LED_BUILTIN,   LOW); // gets comiled down to an atomic instruction (I believe)
   enable_blink = 0;
-  //Serial.println(F("Ignore LED button pressed")); // REMOVE THIS TEMPORARY CODE (used to check for bounce)
+  //Serial.print(F("Ignore LED button pressed\n")); // REMOVE THIS TEMPORARY CODE (used to check for bounce)
+}
+
+void copyToMicroSD_ISR() {
+  if((stateSD == SD_SUCCESS) or (stateSD == SD_ERROR)){
+    stateSD = SD_INIT;
+  }
 }
 
 // Generic function to check if a button is pressed (allows ANY pins!)
-int buttonPressed(byte buttonPinNum) {
+bool buttonPressed(byte buttonPinNum) {
   static unsigned long lastStates = 0xFFFFFFFFUL; // variable value preserved between function calls, only initialized once
   byte state = digitalRead(buttonPinNum);
   if (state != ((lastStates >> buttonPinNum) & 1UL)) {
@@ -260,21 +324,22 @@ int main() {
   
   pinMode(PIN_BUTTON_LEFT, INPUT_PULLUP);
   digitalWriteFast(PIN_BUTTON_LEFT, HIGH);
+  //db_8_bit button2(PIN_BUTTON_LEFT);
 
   pinMode(PIN_BUTTON_DMS, INPUT_PULLUP);
   digitalWriteFast(PIN_BUTTON_DMS, HIGH);
+  //db_8_bit button3(PIN_BUTTON_DMS);
 
   pinMode(PIN_BUTTON_LAND, INPUT_PULLUP);
   digitalWriteFast(PIN_BUTTON_LAND, HIGH);
+  //db_8_bit button4(PIN_BUTTON_LAND);
 
   pinMode(PIN_LED_RESET, INPUT_PULLUP);
-  digitalWriteFast(PIN_LED_RESET, HIGH);  
+  digitalWriteFast(PIN_LED_RESET, HIGH);
+  //db_8_bit button5(PIN_LED_RESET);
 
   Serial.begin(9600);
   Serial1.begin(100000, SERIAL_8E2);
-
-  // Attach Interrupt to user button
-  attachInterrupt(digitalPinToInterrupt(PIN_LED_RESET), userButtonISR, FALLING);
 
   // Set the ADC resolution to 12 bits
   // analogReadResolution(12);
@@ -284,8 +349,13 @@ int main() {
   if (!sd.cardBegin(SD_CONFIG)) {
     digitalWriteFast(PIN_SD_LED, LOW);
     is_SD_inserted = 0;
-    Serial.print(F("\nSD initialization failed.\nEntering operation mode.\n\nInitilization error displayed below:\n"));
-    sd.initErrorHalt(&Serial);
+    Serial.print(F("\nSD initialization failed.\nEntering operation mode.\n"));
+    //Serial.print(F("\nInitilization error displayed below:\n"));
+    //sd.initErrorHalt(&Serial);
+
+    // Attach Interrupt to user button
+    attachInterrupt(digitalPinToInterrupt(PIN_LED_RESET), ignoreErrorISR, FALLING);
+
     // Begin operation mode:
     while (1) {
       uint32_t currentMillis = millis();
@@ -370,13 +440,52 @@ int main() {
   else {
     digitalWriteFast(PIN_SD_LED, HIGH);
     is_SD_inserted = 1;
+    Serial.print(F("\nSD initialization succeded.\nEntering log-copy mode.\n"));
+
+    // Attach Interrupt to user button
+    attachInterrupt(digitalPinToInterrupt(PIN_LED_RESET), copyToMicroSD_ISR, FALLING);
+
     // Enter debug mode:
     while (2) {
-      // Check EEPROM log for data
-
+      uint32_t currentMillis = millis();
+      
+      // change LED brightness (PWM duty cycle)
+      if ((currentMillis - previousMillisLED >= 6) and ((stateSD == SD_COPY) or (stateSD == SD_VERIFY)) ) {
+        previousMillisLED = currentMillis; // save the last the LED brightness adjustment time
+        brightness = brightness + fadeAmount; // change the brightness for next time through the loop
+        if (brightness <= 0 || brightness >= 255) {
+          fadeAmount = -fadeAmount; // reverse the direction of the fading at the ends of the fade
+        }
+        analogWrite(PIN_SD_LED, brightness);
+      }       
+      
       // Attempt to copy data to micro SC card
-      // Failure? --> Notify user, button to retry.
-      // Success? --> Validate data
+      if (stateSD == SD_INIT){
+        stateSD = SD_COPY;
+        // Check EEPROM log for data
+        dumpLog2Serial();
+        // TODO: do something...
+
+      }
+      /*
+      if (copySuccess == TRUE){
+        stateSD = SD_VERIFY;
+        // Validate data
+        // TODO: ...
+        if (validateSuccess == TRUE){
+          clearEEPROM();
+          stateSD = SD_SUCCESS;
+        }
+        else{
+          stateSD = SD_ERROR;
+          // Failure --> Notify user, button to retry.
+        }
+      }
+      else{
+        stateSD = SD_ERROR;
+        // Failure --> Notify user, button to retry.
+      }
+      */
     }
   }
 }
