@@ -66,7 +66,6 @@ int t_out = 0;
 int address = 0;
 byte eeprom_bookmark = 0; // defaults to 0 if EEPROM has no available slots.
 byte enable_blink = 0;
-bool is_SD_inserted = 0; // flag indicating if a micro SD card is present
 
 // SD related variables:
 uint32_t previousMillisLED = 0;
@@ -78,7 +77,8 @@ int fadeAmount = 1; // how many points to fade the LED by
 #define SD_COPY    1 // flag indicating copy in progress
 #define SD_VERIFY  2 // flag indicating data verification in progress
 #define SD_SUCCESS 3 // flag indicating copy success
-#define SD_ERROR   4 // flag indicating copy failure
+#define SD_CLEAR_EEPROM 4 // flag indicating eeprom needs clearing
+#define SD_ERROR   5 // flag indicating copy failure
 int stateSD = SD_INIT;
 
 // EEPROM Related variables
@@ -171,8 +171,11 @@ void ignoreErrorISR() {
 }
 
 void copyToMicroSD_ISR() {
-  if((stateSD == SD_SUCCESS) or (stateSD == SD_ERROR)){
+  if(stateSD == SD_ERROR){
     stateSD = SD_INIT;
+  }
+  if(stateSD == SD_SUCCESS){
+    stateSD = SD_CLEAR_EEPROM;
   }
 }
 
@@ -348,7 +351,6 @@ int main() {
   // Check for presence of SD card:
   if (!sd.cardBegin(SD_CONFIG)) {
     digitalWriteFast(PIN_SD_LED, LOW);
-    is_SD_inserted = 0;
     Serial.print(F("\nSD initialization failed.\nEntering operation mode.\n"));
     //Serial.print(F("\nInitilization error displayed below:\n"));
     //sd.initErrorHalt(&Serial);
@@ -426,7 +428,7 @@ int main() {
       if (currentMillis > blinkTime && enable_blink == 1) {
         digitalWriteFast(PIN_LED_ALERT, !digitalRead(PIN_LED_ALERT)); // toggle the LED
         digitalWriteFast(LED_BUILTIN,   !digitalRead(LED_BUILTIN));   // toggle the LED
-        blinkTime += LED_BLINK_RATE; // blinkTime = currentMillis + LED_BLINK_RATE;
+        blinkTime += LED_BLINK_RATE;
       }
       
       if (currentMillis > sbusTime) {
@@ -439,7 +441,6 @@ int main() {
   }
   else {
     digitalWriteFast(PIN_SD_LED, HIGH);
-    is_SD_inserted = 1;
     Serial.print(F("\nSD initialization succeded.\nEntering log-copy mode.\n"));
 
     // Attach Interrupt to user button
@@ -456,36 +457,61 @@ int main() {
         if (brightness <= 0 || brightness >= 255) {
           fadeAmount = -fadeAmount; // reverse the direction of the fading at the ends of the fade
         }
-        analogWrite(PIN_SD_LED, brightness);
-      }       
+        analogWrite(PIN_SD_LED, brightness); // This initiates PWM at the desired brightness
+      }
       
       // Attempt to copy data to micro SC card
       if (stateSD == SD_INIT){
         stateSD = SD_COPY;
+        enable_blink = 0;
+        digitalWriteFast(PIN_LED_ALERT, LOW);
+        digitalWriteFast(LED_BUILTIN, LOW);
         // Check EEPROM log for data
-        dumpLog2Serial();
+        //dumpLog2Serial();
+
         // TODO: do something...
 
+        // TODO: Remove APPLE DEMO:
+        previousMillisUserNote = millis();
       }
-      /*
-      if (copySuccess == TRUE){
-        stateSD = SD_VERIFY;
+
+      // TODO: Remove APPLE DEMO: pretend to take 2 seconds to copy data
+      if((stateSD == SD_COPY) and (currentMillis - previousMillisUserNote >= 3000)){
         // Validate data
         // TODO: ...
-        if (validateSuccess == TRUE){
-          clearEEPROM();
-          stateSD = SD_SUCCESS;
+
+        // TODO: Remove APPLE DEMO:
+        if(1 == 1){
+          stateSD = SD_VERIFY;
         }
         else{
           stateSD = SD_ERROR;
+          pinMode(PIN_SD_LED, OUTPUT);
+          digitalWriteFast(PIN_SD_LED, HIGH);
+          digitalWriteFast(PIN_LED_ALERT, HIGH);
+          digitalWriteFast(LED_BUILTIN, HIGH);
           // Failure --> Notify user, button to retry.
         }
       }
-      else{
-        stateSD = SD_ERROR;
-        // Failure --> Notify user, button to retry.
+      
+      if (stateSD == SD_VERIFY){
+        stateSD = SD_SUCCESS;
+        pinMode(PIN_SD_LED, OUTPUT);
+        digitalWriteFast(PIN_SD_LED, HIGH); 
+        enable_blink = 1;
       }
-      */
+
+      if (stateSD == SD_CLEAR_EEPROM){
+        //clearEEPROM();
+        enable_blink = 0;
+        digitalWriteFast(PIN_SD_LED, HIGH);
+      }
+
+      if (currentMillis > blinkTime && enable_blink == 1) {
+        digitalWriteFast(PIN_SD_LED, !digitalRead(PIN_SD_LED)); // toggle the LED
+        blinkTime += LED_BLINK_RATE;
+      }
+
     }
   }
 }
