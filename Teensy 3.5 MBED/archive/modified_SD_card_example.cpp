@@ -5,7 +5,7 @@
 // the size of the FIFO, and using dedicated SPI.
 #include <Arduino.h>
 #include "SdFat.h"
-#include "FreeStack.h"
+#include "FreeStack.h" // Part of the SdFat library (it includes other sub-libraries)
 //#include "ExFatLogger.h" // manually included below:
 // Avoid IDE problems by defining struct in septate .h file.
 // Pad record so size is a power of two for best write performance.
@@ -40,7 +40,7 @@ const uint32_t LOG_INTERVAL_USEC = 250;
 #endif  // USE_RTC
 
 // LED to light if overruns occur.
-#define ERROR_LED_PIN -1
+#define ERROR_LED_PIN 36
 
 /*
   Change the value of SD_CS_PIN if you are using SPI and
@@ -51,13 +51,8 @@ const uint32_t LOG_INTERVAL_USEC = 250;
   Adafruit SD shields and modules: pin 10
 */
 
-// SDCARD_SS_PIN is defined for the built-in SD on some boards.
-#ifndef SDCARD_SS_PIN
-const uint8_t SD_CS_PIN = SS;
-#else  // SDCARD_SS_PIN
 // Assume built-in SD is used.
-const uint8_t SD_CS_PIN = SDCARD_SS_PIN;
-#endif  // SDCARD_SS_PIN
+const uint8_t SD_CS_PIN = SDCARD_SS_PIN; // 62 in the case of the Teensy 3.5
 
 // FIFO SIZE - 512 byte sectors.  Modify for your board.
 #ifdef __AVR_ATmega328P__
@@ -77,21 +72,8 @@ const uint32_t PREALLOCATE_SIZE_MiB = 1024UL;
 // Try max SPI clock for an SD. Reduce SPI_CLOCK if errors occur.
 #define SPI_CLOCK SD_SCK_MHZ(50)
 
-// Try to select the best SD card configuration.
-#if HAS_SDIO_CLASS
+// Select SDIO for SD card configuration. (because HAS_SDIO_CLASS == 1 for Teensy 3.5)
 #define SD_CONFIG SdioConfig(FIFO_SDIO)
-#elif  ENABLE_DEDICATED_SPI
-#define SD_CONFIG SdSpiConfig(SD_CS_PIN, DEDICATED_SPI, SPI_CLOCK)
-#else  // HAS_SDIO_CLASS
-#define SD_CONFIG SdSpiConfig(SD_CS_PIN, SHARED_SPI, SPI_CLOCK)
-#endif  // HAS_SDIO_CLASS
-
-// Save SRAM if 328.
-#ifdef __AVR_ATmega328P__
-#include "MinimumSerial.h"
-MinimumSerial MinSerial;
-#define Serial MinSerial
-#endif  // __AVR_ATmega328P__
 
 // Declare Functoions:
 void logRecord(data_t* data, uint16_t overrun);
@@ -540,7 +522,7 @@ int main() {
   }
   Serial.begin(9600);
 
-  // Wait for USB Serial
+  // Wait for USB Serial (TODO: I might not be able to wait for Serial since it's not guarnteed to be connected...)
   while (!Serial) {
     yield();
   }
@@ -550,11 +532,6 @@ int main() {
     yield();
   }
   FillStack();
-#if !ENABLE_DEDICATED_SPI
-  Serial.println(F(
-    "\nFor best performance edit SdFatConfig.h\n"
-    "and set ENABLE_DEDICATED_SPI nonzero"));
-#endif  // !ENABLE_DEDICATED_SPI
 
   Serial.print(FIFO_DIM);
   Serial.println(F(" FIFO entries will be used."));
@@ -582,7 +559,7 @@ int main() {
     clearSerialInput();
 
     if (ERROR_LED_PIN >= 0) {
-        digitalWrite(ERROR_LED_PIN, LOW);
+        digitalWrite(ERROR_LED_PIN, LOW); // turns off the LED when initilization is complete
     }
     Serial.println();
     Serial.println(F("type: "));

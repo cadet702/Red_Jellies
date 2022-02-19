@@ -45,7 +45,10 @@ const byte PIN_ANALOG_PITCH_B    = A14;
 const byte PIN_BUTTON_LAND       = 24; // (auto land) interrupts not yet supported
 
 // OTHER PINS:
-const byte PIN_LED_ALERT         = 36; // LED_BUILTIN
+#ifndef ERROR_LED_PIN
+#define ERROR_LED_PIN 36
+#endif
+const byte PIN_LED_ALERT         = ERROR_LED_PIN; // LED_BUILTIN is also used to mirror errors
 const byte PIN_SD_LED            = 37; // LED used for indicating SD card related status
 const byte PIN_LED_RESET         = 8;  // a button to turn off the warning LED...
 
@@ -502,7 +505,7 @@ int main() {
       }
 
       if (stateSD == SD_CLEAR_EEPROM){
-        //clearEEPROM();
+        clearEEPROM();
         enable_blink = 0;
         digitalWriteFast(PIN_SD_LED, HIGH);
       }
