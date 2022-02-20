@@ -27,6 +27,7 @@ const int y_midpoint = (RC_CHANNEL_MIN_Y + RC_CHANNEL_MAX_Y)/2;
 #define SBUS_STATE_SIGNALLOSS 0x04
 #define SBUS_UPDATE_RATE 15 //ms
 #define LED_BLINK_RATE 250 //ms
+#define UPDATE_BUTTON_FREQUENCY 5 //ms between updating button history
 
 // LEFT Joystick Pins in Use:
 const byte PIN_ANALOG_YAW_A      = A0; 
@@ -49,8 +50,8 @@ const byte PIN_BUTTON_LAND       = 24; // (auto land) interrupts not yet support
 #define ERROR_LED_PIN 36
 #endif
 const byte PIN_LED_ALERT         = ERROR_LED_PIN; // LED_BUILTIN is also used to mirror errors
-const byte PIN_SD_LED            = 37; // LED used for indicating SD card related status
-const byte PIN_LED_RESET         = 8;  // a button to turn off the warning LED...
+const byte PIN_LED_SD            = 37; // LED used for indicating SD card related status
+const byte PIN_BUTTON_USER       = 8;  // a button to turn off the warning LED...
 
 int r_out_a = 0;
 int r_out_b = 0; // low priority if short on pins
@@ -118,6 +119,12 @@ int aInputMin[8] = {
   SBUS_MID_OFFSET
 };
 
+db_8_bit button1(PIN_BUTTON_RIGHT);
+db_8_bit button2(PIN_BUTTON_LEFT);
+db_8_bit button3(PIN_BUTTON_DMS);
+db_8_bit button4(PIN_BUTTON_LAND);
+db_8_bit button5(PIN_BUTTON_USER);
+
 // EEPROM functions
 void clearEEPROM();
 void dumpLog2Serial();
@@ -159,6 +166,7 @@ void dumpLog2Serial() {
 void ignoreErrorISR();
 void copyToMicroSD_ISR();
 bool buttonPressed(byte buttonPinNum); // TODO: remove if not used
+void updateAllButtonHistory();
 int checkForError(byte pin_num, int min_allowed, int max_allowed, byte aInput_num);
 int whichSensor(int sensor_a_value, int sensor_b_value, int midpoint);
 int sensorValue_2_SBUS_Value(int d, int min_num, int max_num, int midpoint, int slop);
@@ -191,6 +199,15 @@ bool buttonPressed(byte buttonPinNum) {
     return state == LOW;
   }
   return false;
+}
+
+
+void updateAllButtonHistory(){
+  button1.update_button();
+  button2.update_button();
+  button3.update_button();
+  button4.update_button();
+  button5.update_button();
 }
 
 // Function to check the analog values for errors, log the most extreme examples, and return the analog reading
@@ -293,10 +310,11 @@ uint8_t sbusPacket[SBUS_PACKET_LENGTH];
 int rcChannels[SBUS_CHANNEL_NUMBER];
 uint32_t sbusTime = 0;
 uint32_t blinkTime = 0;
+uint32_t updateButtonTime = 0;
 
 //////////////////////////////////////////////////////
 int main() {
-  // Setup Section:
+  // Universal Setup Section:
   for (uint8_t i = 0; i < SBUS_CHANNEL_NUMBER; i++) {
     rcChannels[i] = SBUS_MID_OFFSET;
   }
@@ -310,19 +328,14 @@ int main() {
     }
   }
 
-  // Blink the LED if the log hasn't been cleared
-  if (EEPROM.read(0) != 0){
-    enable_blink = 1;
-  }
-
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWriteFast(LED_BUILTIN, LOW);
   
   pinMode(PIN_LED_ALERT, OUTPUT);
   digitalWriteFast(PIN_LED_ALERT, LOW);
 
-  pinMode(PIN_SD_LED, OUTPUT);
-  digitalWriteFast(PIN_SD_LED, LOW);
+  pinMode(PIN_LED_SD, OUTPUT);
+  digitalWriteFast(PIN_LED_SD, LOW);
   
   pinMode(PIN_BUTTON_RIGHT, INPUT_PULLUP);
   digitalWriteFast(PIN_BUTTON_RIGHT, HIGH);
@@ -340,12 +353,13 @@ int main() {
   digitalWriteFast(PIN_BUTTON_LAND, HIGH);
   //db_8_bit button4(PIN_BUTTON_LAND);
 
-  pinMode(PIN_LED_RESET, INPUT_PULLUP);
-  digitalWriteFast(PIN_LED_RESET, HIGH);
-  //db_8_bit button5(PIN_LED_RESET);
+  pinMode(PIN_BUTTON_USER, INPUT_PULLUP);
+  digitalWriteFast(PIN_BUTTON_USER, HIGH);
+  //db_8_bit button5(PIN_BUTTON_USER);
 
   Serial.begin(9600);
   Serial1.begin(100000, SERIAL_8E2);
+  Serial.print(F("this happened..."));
 
   // Set the ADC resolution to 12 bits
   // analogReadResolution(12);
@@ -353,13 +367,18 @@ int main() {
 
   // Check for presence of SD card:
   if (!sd.cardBegin(SD_CONFIG)) {
-    digitalWriteFast(PIN_SD_LED, LOW);
+    // Commense Operation Mode Specific Setup:
     Serial.print(F("\nSD initialization failed.\nEntering operation mode.\n"));
     //Serial.print(F("\nInitilization error displayed below:\n"));
     //sd.initErrorHalt(&Serial);
 
+    // Blink the LED if the log hasn't been cleared
+    if (EEPROM.read(0) != 0){
+      enable_blink = 1;
+    }
+
     // Attach Interrupt to user button
-    attachInterrupt(digitalPinToInterrupt(PIN_LED_RESET), ignoreErrorISR, FALLING);
+    attachInterrupt(digitalPinToInterrupt(PIN_BUTTON_USER), ignoreErrorISR, FALLING);
 
     // Begin operation mode:
     while (1) {
@@ -399,14 +418,6 @@ int main() {
         rcChannels[5] = SBUS_MAX_OFFSET;
       }
 
-      /*
-      // Example library usage
-      if(button1.is_button_down())
-      {
-        Serial.print(F("This happened!!"));
-      }
-      */
-
       // Channel 7
       rcChannels[6] = SBUS_MAX_OFFSET;
       if(!digitalRead(PIN_BUTTON_DMS)) {
@@ -440,16 +451,26 @@ int main() {
         Serial1.write(sbusPacket, SBUS_PACKET_LENGTH);
         sbusTime = currentMillis + SBUS_UPDATE_RATE;
       }
+      
+      if(currentMillis > updateButtonTime) {
+        updateAllButtonHistory();
+        updateButtonTime = currentMillis + UPDATE_BUTTON_FREQUENCY;
+      }
+      
     }
   }
   else {
-    digitalWriteFast(PIN_SD_LED, HIGH);
+    // Commence device servicing setup:
     Serial.print(F("\nSD initialization succeded.\nEntering log-copy mode.\n"));
+    digitalWriteFast(PIN_LED_SD, HIGH);
 
     // Attach Interrupt to user button
-    attachInterrupt(digitalPinToInterrupt(PIN_LED_RESET), copyToMicroSD_ISR, FALLING);
+    attachInterrupt(digitalPinToInterrupt(PIN_BUTTON_USER), copyToMicroSD_ISR, FALLING);
 
-    // Enter debug mode:
+    // initilizing the check outside the loop
+    bool actionsComplete = false;
+
+    // Enter device servicing mode:
     while (2) {
       uint32_t currentMillis = millis();
       
@@ -460,7 +481,7 @@ int main() {
         if (brightness <= 0 || brightness >= 255) {
           fadeAmount = -fadeAmount; // reverse the direction of the fading at the ends of the fade
         }
-        analogWrite(PIN_SD_LED, brightness); // This initiates PWM at the desired brightness
+        analogWrite(PIN_LED_SD, brightness); // This initiates PWM at the desired brightness
       }
       
       // Attempt to copy data to micro SC card
@@ -489,8 +510,8 @@ int main() {
         }
         else{
           stateSD = SD_ERROR;
-          pinMode(PIN_SD_LED, OUTPUT);
-          digitalWriteFast(PIN_SD_LED, HIGH);
+          pinMode(PIN_LED_SD, OUTPUT);
+          digitalWriteFast(PIN_LED_SD, HIGH);
           digitalWriteFast(PIN_LED_ALERT, HIGH);
           digitalWriteFast(LED_BUILTIN, HIGH);
           // Failure --> Notify user, button to retry.
@@ -499,22 +520,54 @@ int main() {
       
       if (stateSD == SD_VERIFY){
         stateSD = SD_SUCCESS;
-        pinMode(PIN_SD_LED, OUTPUT);
-        digitalWriteFast(PIN_SD_LED, HIGH); 
+        pinMode(PIN_LED_SD, OUTPUT);
+        digitalWriteFast(PIN_LED_SD, HIGH); 
         enable_blink = 1;
       }
 
       if (stateSD == SD_CLEAR_EEPROM){
-        clearEEPROM();
-        enable_blink = 0;
-        digitalWriteFast(PIN_SD_LED, HIGH);
+        
+        if(!actionsComplete){
+          clearEEPROM();
+          enable_blink = 0;
+          digitalWriteFast(PIN_LED_SD, HIGH);
+          actionsComplete = true;
+        }
       }
 
       if (currentMillis > blinkTime && enable_blink == 1) {
-        digitalWriteFast(PIN_SD_LED, !digitalRead(PIN_SD_LED)); // toggle the LED
+        digitalWriteFast(PIN_LED_SD, !digitalRead(PIN_LED_SD)); // toggle the LED
         blinkTime += LED_BLINK_RATE;
       }
 
+      // Example library usage to test debounce
+      if(button1.is_button_pressed())
+      {
+        Serial.print(F("Button 1 pressed!\n"));
+      }
+      if(button2.is_button_pressed())
+      {
+        Serial.print(F("Button 2 pressed!\n"));
+      }
+      if(button3.is_button_pressed())
+      {
+        Serial.print(F("Button 3 pressed!\n"));
+      }
+      if(button4.is_button_pressed())
+      {
+        Serial.print(F("Button 4 pressed!\n"));
+      }
+      if(button5.is_button_pressed())
+      {
+        Serial.print(F("Button 5 pressed!\n"));
+      }
+      
+      /*
+      if(currentMillis > updateButtonTime) {
+        updateAllButtonHistory();
+        updateButtonTime = currentMillis + UPDATE_BUTTON_FREQUENCY;
+      }
+      */
     }
   }
 }
