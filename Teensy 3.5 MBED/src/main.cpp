@@ -541,33 +541,32 @@ int main() {
       }
 
       // Example library usage to test debounce
-      if(button1.is_button_pressed())
-      {
+      if(button1.is_button_pressed()) {
         Serial.print(F("Button 1 pressed!\n"));
       }
-      if(button2.is_button_pressed())
-      {
+      if(button2.is_button_pressed()) {
         Serial.print(F("Button 2 pressed!\n"));
       }
-      if(button3.is_button_pressed())
-      {
+      if(button3.is_button_pressed()) {
         Serial.print(F("Button 3 pressed!\n"));
       }
-      if(button4.is_button_pressed())
-      {
+      if(button4.is_button_pressed()) {
         Serial.print(F("Button 4 pressed!\n"));
       }
-      if(button5.is_button_pressed())
-      {
+      if(button5.is_button_pressed()) {
         Serial.print(F("Button 5 pressed!\n"));
       }
+      /*      
+      if(button5.is_button_released()) {
+        Serial.print(F("Button 5 released!\n"));
+      }
+      */
       
-      /*
       if(currentMillis > updateButtonTime) {
         updateAllButtonHistory();
         updateButtonTime = currentMillis + UPDATE_BUTTON_FREQUENCY;
       }
-      */
+      
     }
   }
 }
