@@ -563,12 +563,12 @@ int main() {
     }
     Serial.println();
     Serial.println(F("type: "));
-    Serial.println(F("b - open existing bin file"));
-    Serial.println(F("c - convert file to csv"));
-    Serial.println(F("l - list files"));
-    Serial.println(F("p - print data to Serial"));
-    Serial.println(F("r - record data"));
-    Serial.println(F("t - test without logging"));
+    Serial.println(F("b - open existing bin file")); // integrate with something else?
+    Serial.println(F("c - convert file to csv"));    // needed?
+    Serial.println(F("l - list files"));             // keep as is
+    Serial.println(F("p - print data to Serial"));   // replace with dumpLog2Serial()
+    Serial.println(F("r - record data"));            // ??
+    Serial.println(F("t - test without logging"));   // ??
     while(!Serial.available()) {
         yield();
     }
@@ -579,15 +579,15 @@ int main() {
         openBinFile();
     } else if (c == 'c') {
         if (createCsvFile()) {
-        binaryToCsv();
+          binaryToCsv();
         }
     } else if (c == 'l') {
         Serial.println(F("ls:"));
         sd.ls(&Serial, LS_DATE | LS_SIZE);
     } else if (c == 'p') {
-        printData();
+        printData(); // replace with dumpLog2Serial()
     } else if (c == 'r') {
-        createBinFile();
+        createBinFile(); // attempts to create a new bin file via preallocation
         logData();
     } else if (c == 't') {
         testSensor();
