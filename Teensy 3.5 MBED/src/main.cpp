@@ -1,6 +1,17 @@
 #include <Arduino.h>
 #include <EEPROM.h> // +0% pgm +0% mem // See: https://www.pjrc.com/teensy/td_libs_EEPROM.html
-#include <SdFat.h>
+#include <SdFat.h> // The SdFat library is licensed as follows:
+/*
+MIT License
+
+Copyright (c) 2011..2020 Bill Greiman
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+*/
 #include "db_8_bit.h" // Ultimate debounce code as a library based on: https://hackaday.com/2015/12/10/embed-with-elliot-debounce-your-noisy-buttons-part-ii/#more-180185
 
 // ~232 and ~930 make the best use of sensors with a 0.75V to 3.00V range.
@@ -369,6 +380,7 @@ int main() {
   if (!sd.cardBegin(SD_CONFIG)) {
     // Commense Operation Mode Specific Setup:
     Serial.print(F("\nSD initialization failed.\nEntering operation mode.\n"));
+    // TODO: be able to print and describe the error without haulting
     //Serial.print(F("\nInitilization error displayed below:\n"));
     //sd.initErrorHalt(&Serial);
 
@@ -540,7 +552,7 @@ int main() {
         blinkTime += LED_BLINK_RATE;
       }
 
-      // Example library usage to test debounce
+      // Test debounce with serial prints when in debug mode
       if(button1.is_button_pressed()) {
         Serial.print(F("Button 1 pressed!\n"));
       }
@@ -556,11 +568,6 @@ int main() {
       if(button5.is_button_pressed()) {
         Serial.print(F("Button 5 pressed!\n"));
       }
-      /*      
-      if(button5.is_button_released()) {
-        Serial.print(F("Button 5 released!\n"));
-      }
-      */
       
       if(currentMillis > updateButtonTime) {
         updateAllButtonHistory();
