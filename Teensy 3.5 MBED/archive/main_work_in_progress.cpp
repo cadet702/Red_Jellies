@@ -1,11 +1,16 @@
 #include <Arduino.h>
 #include <EEPROM.h> // +0% pgm +0% mem // See: https://www.pjrc.com/teensy/td_libs_EEPROM.html
-#include <SdFat.h> // The SdFat library is licensed as follows:
+#include <SdFat.h> // The SdFat library is licensed as listed below:
+#include "FreeStack.h" // Part of the SdFat library (it includes other sub-libraries)
 /*
 MIT License
+
 Copyright (c) 2011..2020 Bill Greiman
+
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
 The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 #include "db_8_bit.h" // Ultimate debounce code as a library based on: https://hackaday.com/2015/12/10/embed-with-elliot-debounce-your-noisy-buttons-part-ii/#more-180185
@@ -37,28 +42,28 @@ const int y_midpoint = (RC_CHANNEL_MIN_Y + RC_CHANNEL_MAX_Y)/2;
 #define UPDATE_BUTTON_FREQUENCY 5 //ms between updating button history
 
 // LEFT Joystick Pins in Use:
-const byte PIN_ANALOG_YAW_A      = A9; 
-const byte PIN_ANALOG_YAW_B      = A1;
-const byte PIN_ANALOG_THROTTLE_A = A3; 
-const byte PIN_ANALOG_THROTTLE_B = A5;
-const byte PIN_BUTTON_RIGHT      = 11; //? left and right might be switched...
-const byte PIN_BUTTON_LEFT       = 10; //? left and right might be switched...
-const byte PIN_BUTTON_DMS        = 12; // (dead man switch) interrupts not yet supported
+const byte PIN_ANALOG_YAW_A      = A0; 
+const byte PIN_ANALOG_YAW_B      = A16;
+const byte PIN_ANALOG_THROTTLE_A = A12; 
+const byte PIN_ANALOG_THROTTLE_B = A13;
+const byte PIN_BUTTON_RIGHT      = 11;
+const byte PIN_BUTTON_LEFT       = 12;
+const byte PIN_BUTTON_DMS        = 25; // (dead man switch) interrupts not yet supported
 
 // RIGHT Joystick Pins in Use:
-const byte PIN_ANALOG_ROLL_A     = A8;
-const byte PIN_ANALOG_ROLL_B     = A6;
-const byte PIN_ANALOG_PITCH_A    = A4;
-const byte PIN_ANALOG_PITCH_B    = A7;
+const byte PIN_ANALOG_ROLL_A     = A3;
+const byte PIN_ANALOG_ROLL_B     = A9;
+const byte PIN_ANALOG_PITCH_A    = A15;
+const byte PIN_ANALOG_PITCH_B    = A14; 
 const byte PIN_BUTTON_LAND       = 24; // (auto land) interrupts not yet supported
 
 // OTHER PINS:
 #ifndef ERROR_LED_PIN
-#define ERROR_LED_PIN 8
+#define ERROR_LED_PIN 36
 #endif
 const byte PIN_LED_ALERT         = ERROR_LED_PIN; // LED_BUILTIN is also used to mirror errors
-const byte PIN_LED_SD            = 9; // LED used for indicating SD card related status
-const byte PIN_BUTTON_USER       = 2; // a button to turn off the warning LED...
+const byte PIN_LED_SD            = 37; // LED used for indicating SD card related status
+const byte PIN_BUTTON_USER       = 8;  // a button to turn off the warning LED...
 
 int r_out_a = 0;
 int r_out_b = 0; // low priority if short on pins
@@ -99,10 +104,32 @@ uint8_t on_aInput_num;
 int invalid_int;
 //const int memSize = EEPROM.length(); // not currently used
 
-// Use Teensy SDIO
-#define SD_CONFIG  SdioConfig(FIFO_SDIO)
-SdFs sd;
-FsFile file;
+// Use Teensy SDIO (This section is largely copied from SdFat example code)
+const size_t ADC_COUNT = 8; // 4 in the example
+struct data_t {
+  uint16_t adc[ADC_COUNT];
+};
+const uint32_t LOG_INTERVAL_USEC = 250;
+const uint8_t SD_CS_PIN = SDCARD_SS_PIN; // Assume built-in SD is used. Pin 62 in the case of the Teensy 3.5
+#define FIFO_SIZE_SECTORS 16 // Use 8 KiB for non-AVR boards.
+const uint32_t PREALLOCATE_SIZE_MiB = 1024UL; // Preallocate 1GiB file.
+#define SPI_CLOCK SD_SCK_MHZ(50) // Try max SPI clock for an SD. Reduce SPI_CLOCK if errors occur.
+#define SD_CONFIG  SdioConfig(FIFO_SDIO) // Select SDIO for SD card configuration. (because HAS_SDIO_CLASS == 1 for Teensy 3.5)
+const uint64_t PREALLOCATE_SIZE  =  (uint64_t)PREALLOCATE_SIZE_MiB << 20;
+#define FILE_NAME_DIM 40 // Max length of file name including zero byte.
+//char name[FILE_NAME_DIM]; // Make a global variable to store the file name
+const size_t FIFO_DIM = 512*FIFO_SIZE_SECTORS/sizeof(data_t); // Max number of records to buffer while SD is busy.
+typedef SdFat32 sd_t;  // hardcoded value for SD_FAT_TYPE == 1
+typedef File32 file_t; // hardcoded value for SD_FAT_TYPE == 1
+sd_t sd; // just Fat16/32 formatted cards
+//SdFs sd; // this should be more generic, but is untested...
+//FsFile file; // similarly untested
+file_t binFile;
+file_t csvFile;
+char binName[] = "ErrorLogger00.bin"; // Editable filename.  Digits before the dot are file versions.
+#define error(s) sd.errorHalt(&Serial, F(s))
+#define dbgAssert(e) ((e) ? (void)0 : error("assert " #e))
+
 
 int aInputMax[8] = {
   SBUS_MID_OFFSET,
@@ -131,6 +158,401 @@ db_8_bit button2(PIN_BUTTON_LEFT);
 db_8_bit button3(PIN_BUTTON_DMS);
 db_8_bit button4(PIN_BUTTON_LAND);
 db_8_bit button5(PIN_BUTTON_USER);
+
+// SD Functoions: TODO: Replace logRecord(), printRecord(), and ExFatLogger.h for your sensors.
+void logRecord(data_t* data, uint16_t overrun);
+void printRecord(Print* pr, data_t* data);
+void binaryToCsv();
+void clearSerialInput();
+void createBinFile();
+bool createCsvFile();
+void logData();
+void openBinFile();
+void printData();
+bool serialReadLine(char* str, size_t size);
+void testSensor();
+void printUnusedStack();
+
+//==============================================================================
+// TODO: write a description
+void logRecord(data_t* data, uint16_t overrun) {
+  if (overrun) {
+    // Add one since this record has no adc data. Could add overrun field.
+    overrun++;
+    data->adc[0] = 0X8000 | overrun;
+  } else {
+    for (size_t i = 0; i < ADC_COUNT; i++) {
+      data->adc[i] = analogRead(i);
+    }
+  }
+}
+//------------------------------------------------------------------------------
+//TODO: write a description
+void printRecord(Print* pr, data_t* data) {
+  static uint32_t nr = 0;
+  if (!data) {
+    pr->print(F("LOG_INTERVAL_USEC,"));
+    pr->println(LOG_INTERVAL_USEC);
+    pr->print(F("rec#"));
+    for (size_t i = 0; i < ADC_COUNT; i++) {
+      pr->print(F(",adc"));
+      pr->print(i);
+    }
+    pr->println();
+    nr = 0;
+    return;
+  }
+  if (data->adc[0] & 0X8000) {
+    uint16_t n = data->adc[0] & 0X7FFF;
+    nr += n;
+    pr->print(F("-1,"));
+    pr->print(n);
+    pr->println(F(",overuns"));
+  } else {
+    pr->print(nr++);
+    for (size_t i = 0; i < ADC_COUNT; i++) {
+      pr->write(',');
+      pr->print(data->adc[i]);
+    }
+    pr->println();
+  }
+}
+//------------------------------------------------------------------------------
+// Convert binary file to csv file.
+void binaryToCsv() {
+  uint8_t lastPct = 0;
+  uint32_t t0 = millis();
+  data_t binData[FIFO_DIM];
+
+  if (!binFile.seekSet(512)) {
+	  error("binFile.seek failed");
+  }
+  uint32_t tPct = millis();
+  printRecord(&csvFile, nullptr);
+  while (!Serial.available() && binFile.available()) {
+    int nb = binFile.read(binData, sizeof(binData));
+    if (nb <= 0 ) {
+      error("read binFile failed");
+    }
+    size_t nr = nb/sizeof(data_t);
+    for (size_t i = 0; i < nr; i++) {
+      printRecord(&csvFile, &binData[i]);
+    }
+
+    if ((millis() - tPct) > 1000) {
+      uint8_t pct = binFile.curPosition()/(binFile.fileSize()/100);
+      if (pct != lastPct) {
+        tPct = millis();
+        lastPct = pct;
+        Serial.print(pct, DEC);
+        Serial.println('%');
+        csvFile.sync();
+      }
+    }
+    if (Serial.available()) {
+      break;
+    }
+  }
+  csvFile.close();
+  Serial.print(F("Done: "));
+  Serial.print(0.001*(millis() - t0));
+  Serial.println(F(" Seconds"));
+}
+//------------------------------------------------------------------------------
+// Read any Serial data.
+void clearSerialInput() {
+  uint32_t m = micros();
+  do {
+    if (Serial.read() >= 0) {
+      m = micros();
+    }
+  } while (micros() - m < 10000);
+}
+//------------------------------------------------------------------------------
+// Attempts to create a new bin file with a unique name via preallocation
+void createBinFile() {
+  binFile.close();
+  while (sd.exists(binName)) {
+    char* p = strchr(binName, '.');
+    if (!p) {
+      sdErrOperations();
+      error("no dot in filename"); // TODO: revise to be a non-haulting error if possible to allow retries
+    }
+    while (true) {
+      p--;
+      if (p < binName || *p < '0' || *p > '9') {
+        sdErrOperations();
+        error("Can't create file name"); // TODO: revise to be a non-haulting error if possible to allow retries
+      }
+      if (p[0] != '9') {
+        p[0]++;
+        break;
+      }
+      p[0] = '0';
+    }
+  }
+  if (!binFile.open(binName, O_RDWR | O_CREAT)) {
+    sdErrOperations();
+    error("open binName failed"); // TODO: revise to be a non-haulting error if possible to allow retries
+  }
+  Serial.println(binName);
+  if (!binFile.preAllocate(PREALLOCATE_SIZE)) {
+    sdErrOperations();
+    error("preAllocate failed"); // TODO: revise to be a non-haulting error if possible to allow retries
+  }
+
+  Serial.print(F("preAllocated: "));
+  Serial.print(PREALLOCATE_SIZE_MiB);
+  Serial.println(F(" MiB"));
+}
+//------------------------------------------------------------------------------
+//TODO: write a description
+bool createCsvFile() {
+  char csvName[FILE_NAME_DIM];
+  if (!binFile.isOpen()) {
+    Serial.println(F("No current binary file"));
+    return false;
+  }
+
+  // Create a new csvFile.
+  binFile.getName(csvName, sizeof(csvName));
+  char* dot = strchr(csvName, '.');
+  if (!dot) {
+    error("no dot in filename");
+  }
+  strcpy(dot + 1, "csv");
+  if (!csvFile.open(csvName, O_WRONLY | O_CREAT | O_TRUNC)) {
+    error("open csvFile failed");
+  }
+  clearSerialInput(); // Read any Serial data.
+  Serial.print(F("Writing: "));
+  Serial.print(csvName);
+  Serial.println(F(" - type any character to stop"));
+  return true;
+}
+//-------------------------------------------------------------------------------
+//TODO: write a description
+void logData() {
+  int32_t delta;  // Jitter in log time.
+  int32_t maxDelta = 0;
+  uint32_t maxLogMicros = 0;
+  uint32_t maxWriteMicros = 0;
+  size_t maxFifoUse = 0;
+  size_t fifoCount = 0;
+  size_t fifoHead = 0;
+  size_t fifoTail = 0;
+  uint16_t overrun = 0;
+  uint16_t maxOverrun = 0;
+  uint32_t totalOverrun = 0;
+  uint32_t fifoBuf[128*FIFO_SIZE_SECTORS];
+  data_t* fifoData = (data_t*)fifoBuf;
+
+  // Write dummy sector to start multi-block write.
+  dbgAssert(sizeof(fifoBuf) >= 512);
+  memset(fifoBuf, 0, sizeof(fifoBuf));
+  if (binFile.write(fifoBuf, 512) != 512) {
+    sdErrOperations();
+    error("write first sector failed"); // TODO: revise to be a non-haulting error if possible to allow retries
+  }
+  clearSerialInput(); // Read any Serial data.
+  Serial.println(F("Type any character to stop"));
+
+  // Wait until SD is not busy. // TODO: add timeout
+  while (sd.card()->isBusy()) {}
+
+  uint32_t m = millis(); // Start time for log file.
+  uint32_t logTime = micros(); // Time to log next record.
+  while (true) {
+    // Time for next data record.
+    logTime += LOG_INTERVAL_USEC;
+
+    // Wait until time to log data.
+    delta = micros() - logTime;
+    if (delta > 0) {
+      Serial.print(F("delta: "));
+      Serial.println(delta);
+      sdErrOperations();
+      error("Rate too fast");  // TODO: revise to be a non-haulting error if possible to allow retries
+    }
+    while (delta < 0) {
+      delta = micros() - logTime;
+    }
+
+    if (fifoCount < FIFO_DIM) {
+      uint32_t m = micros();
+      logRecord(fifoData + fifoHead, overrun);
+      m = micros() - m;
+      if (m > maxLogMicros) {
+        maxLogMicros = m;
+      }
+      fifoHead = fifoHead < (FIFO_DIM - 1) ? fifoHead + 1 : 0;
+      fifoCount++;
+      if (overrun) {
+        if (overrun > maxOverrun) {
+          maxOverrun = overrun;
+        }
+        overrun = 0;
+      }
+    } else {
+      totalOverrun++;
+      overrun++;
+      if (overrun > 0XFFF) {
+        sdErrOperations();
+        error("too many overruns");  // TODO: revise to be a non-haulting error if possible to allow retries
+      }
+    }
+    // Save max jitter.
+    if (delta > maxDelta) {
+      maxDelta = delta;
+    }
+    // Write data if SD is not busy.
+    if (!sd.card()->isBusy()) {
+      size_t nw = fifoHead > fifoTail ? fifoCount : FIFO_DIM - fifoTail;
+      // Limit write time by not writing more than 512 bytes.
+      const size_t MAX_WRITE = 512/sizeof(data_t);
+      if (nw > MAX_WRITE) nw = MAX_WRITE;
+      size_t nb = nw*sizeof(data_t);
+      uint32_t usec = micros();
+      if (nb != binFile.write(fifoData + fifoTail, nb)) {
+        sdErrOperations();
+        error("write binFile failed"); // TODO: revise to be a non-haulting error if possible to allow retries
+      }
+      usec = micros() - usec;
+      if (usec > maxWriteMicros) {
+        maxWriteMicros = usec;
+      }
+      fifoTail = (fifoTail + nw) < FIFO_DIM ? fifoTail + nw : 0;
+      if (fifoCount > maxFifoUse) {
+        maxFifoUse = fifoCount;
+      }
+      fifoCount -= nw;
+      if (Serial.available()) {
+        break;
+      }
+    }
+  }
+  Serial.print(F("\nLog time: "));
+  Serial.print(0.001*(millis() - m));
+  Serial.print(F(" Seconds\n"));
+  binFile.truncate();
+  binFile.sync();
+  Serial.print(("File size: "));
+  // Warning cast used for print since fileSize is uint64_t.
+  Serial.print((uint32_t)binFile.fileSize());
+  Serial.print(F(" bytes\n"));
+  Serial.print(F("totalOverrun: "));
+  Serial.print(totalOverrun);
+  Serial.print(F("\nFIFO_DIM: "));
+  Serial.print(FIFO_DIM);
+  Serial.print(F("\nmaxFifoUse: "));
+  Serial.print(maxFifoUse);
+  Serial.print(F("\nmaxLogMicros: "));
+  Serial.print(maxLogMicros);
+  Serial.print(F("\nmaxWriteMicros: "));
+  Serial.print(maxWriteMicros);
+  Serial.print(F("\nLog interval: "));
+  Serial.print(LOG_INTERVAL_USEC);
+  Serial.print(F(" micros\nmaxDelta: "));
+  Serial.print(maxDelta);
+  Serial.print(F(" micros\n"));
+}
+//------------------------------------------------------------------------------
+// opens the bin file specified via serial
+void openBinFile() {
+  char name[FILE_NAME_DIM];
+  clearSerialInput(); // Read any Serial data.
+  Serial.println(F("Enter file name"));
+  if (!serialReadLine(name, sizeof(name))) {
+    return;
+  }
+  if (!sd.exists(name)) {
+    Serial.print(name);
+    Serial.print(F("\nFile does not exist\n"));
+    return;
+  }
+  binFile.close();
+  if (!binFile.open(name, O_RDONLY)) {
+    Serial.print(name);
+    Serial.print(F("\nopen failed\n"));
+    return;
+  }
+  Serial.print(F("File opened\n"));
+}
+//-----------------------------------------------------------------------------
+//TODO: write a description
+void printData() {
+  if (!binFile.isOpen()) {
+    Serial.println(F("No current binary file"));
+    return;
+  }
+  // Skip first dummy sector.
+  if (!binFile.seekSet(512)) {
+    error("seek failed");
+  }
+  clearSerialInput(); // Read any Serial data.
+  Serial.println(F("type any character to stop\n"));
+  delay(1000);
+  printRecord(&Serial, nullptr);
+  while (binFile.available() && !Serial.available()) {
+    data_t record;
+    if (binFile.read(&record, sizeof(data_t)) != sizeof(data_t)) {
+      error("read binFile failed");
+    }
+    printRecord(&Serial, &record);
+  }
+}
+//------------------------------------------------------------------------------
+//TODO: write a description
+bool serialReadLine(char* str, size_t size) {
+  size_t n = 0;
+  while(!Serial.available()) {
+    yield();
+  }
+  while (true) {
+    int c = Serial.read();
+    if (c < ' ') {
+      break;
+    }
+    str[n++] = c;
+    if (n >= size) {
+      sdErrOperations();
+      Serial.print(F("input too long\n"));
+      return false;
+    }
+    uint32_t m = millis();
+    while (!Serial.available() && (millis() - m) < 100){}
+    if (!Serial.available()) break;
+  }
+  str[n] = 0;
+  return true;
+}
+//------------------------------------------------------------------------------
+//TODO: write a description
+void testSensor() {
+  const uint32_t interval = 200000;
+  int32_t diff;
+  data_t data;
+  clearSerialInput(); // Read any Serial data.
+  Serial.println(F("\nTesting - type any character to stop\n"));
+  delay(1000);
+  printRecord(&Serial, nullptr);
+  uint32_t m = micros();
+  while (!Serial.available()) {
+    m += interval;
+    do {
+      diff = m - micros();
+    } while (diff > 0);
+    logRecord(&data, 0);
+    printRecord(&Serial, &data);
+  }
+}
+//------------------------------------------------------------------------------
+// Simplly prints the size of the unused stack to serial
+void printUnusedStack() {
+  Serial.print(F("\nUnused stack: "));
+  Serial.println(UnusedStack());
+}
+//==============================================================================
 
 // EEPROM functions
 void clearEEPROM();
@@ -178,6 +600,7 @@ int checkForError(byte pin_num, int min_allowed, int max_allowed, byte aInput_nu
 int whichSensor(int sensor_a_value, int sensor_b_value, int midpoint);
 int sensorValue_2_SBUS_Value(int d, int min_num, int max_num, int midpoint, int slop);
 void sbusPreparePacket(uint8_t packet[], int channels[], bool isSignalLoss, bool isFailsafe);
+void sdErrOperations();
 int main();
 
 // Function called when user button is pressed
@@ -208,7 +631,7 @@ bool buttonPressed(byte buttonPinNum) {
   return false;
 }
 
-
+// A wrapper to call all the button history updates
 void updateAllButtonHistory(){
   button1.update_button();
   button2.update_button();
@@ -313,6 +736,16 @@ void sbusPreparePacket(uint8_t packet[], int channels[], bool isSignalLoss, bool
     packet[24] = SBUS_FRAME_FOOTER; //Footer
 }
 
+// Perform the actions commonly needed for any kind of SD related error
+void sdErrOperations(){
+  stateSD = SD_ERROR;
+  pinMode(PIN_LED_SD, OUTPUT);
+  digitalWriteFast(PIN_LED_SD, HIGH);
+  digitalWriteFast(PIN_LED_ALERT, HIGH);
+  digitalWriteFast(LED_BUILTIN, HIGH);
+  // Failure --> Notify user, button to retry.
+}
+
 uint8_t sbusPacket[SBUS_PACKET_LENGTH];
 int rcChannels[SBUS_CHANNEL_NUMBER];
 uint32_t sbusTime = 0;
@@ -372,7 +805,7 @@ int main() {
   // analogReadResolution(12);
   analogReadAveraging(16);
 
-  // Check for presence of SD card:
+  // Check for presence of SD card by trying to initialize it:
   if (!sd.cardBegin(SD_CONFIG)) {
     // Commense Operation Mode Specific Setup:
     Serial.print(F("\nSD initialization failed.\nEntering operation mode.\n"));
@@ -470,6 +903,8 @@ int main() {
   else {
     // Commence device servicing setup:
     Serial.print(F("\nSD initialization succeded.\nEntering log-copy mode.\n"));
+    Serial.print(FIFO_DIM);
+    Serial.print(F(" FIFO entries will be used.\n"));
     digitalWriteFast(PIN_LED_SD, HIGH);
 
     // Attach Interrupt to user button
@@ -494,20 +929,30 @@ int main() {
       
       // Attempt to copy data to micro SC card
       if (stateSD == SD_INIT){
-        stateSD = SD_COPY;
         enable_blink = 0;
         digitalWriteFast(PIN_LED_ALERT, LOW);
         digitalWriteFast(LED_BUILTIN, LOW);
-        // Check EEPROM log for data
-        //dumpLog2Serial();
-
-        // TODO: do something...
-
+        // Check EEPROM log for data (log is empty if first value == 0)
+        if(EEPROM.read(0) == 0){
+          Serial.print(F("EEPROM log empty. No action taken.\n"));
+        }
+        else{
+          createBinFile();
+          // fill bin file with data...
+          logData(); // maybe this is the right fuction?
+          // convert file to csv...
+          if (createCsvFile()){
+            binaryToCsv();
+          }
+          // maybe something else...
+          //dumpLog2Serial();
+          stateSD = SD_COPY;
+        }
         // TODO: Remove APPLE DEMO:
         previousMillisUserNote = millis();
       }
 
-      // TODO: Remove APPLE DEMO: pretend to take 2 seconds to copy data
+      // TODO: Remove APPLE DEMO: pretend to take 3 seconds to copy data
       if((stateSD == SD_COPY) and (currentMillis - previousMillisUserNote >= 3000)){
         // Validate data
         // TODO: ...
@@ -517,12 +962,7 @@ int main() {
           stateSD = SD_VERIFY;
         }
         else{
-          stateSD = SD_ERROR;
-          pinMode(PIN_LED_SD, OUTPUT);
-          digitalWriteFast(PIN_LED_SD, HIGH);
-          digitalWriteFast(PIN_LED_ALERT, HIGH);
-          digitalWriteFast(LED_BUILTIN, HIGH);
-          // Failure --> Notify user, button to retry.
+          sdErrOperations();
         }
       }
       
@@ -534,7 +974,6 @@ int main() {
       }
 
       if (stateSD == SD_CLEAR_EEPROM){
-        
         if(!actionsComplete){
           clearEEPROM();
           enable_blink = 0;
@@ -543,6 +982,7 @@ int main() {
         }
       }
 
+      // blink if enabled
       if (currentMillis > blinkTime && enable_blink == 1) {
         digitalWriteFast(PIN_LED_SD, !digitalRead(PIN_LED_SD)); // toggle the LED
         blinkTime += LED_BLINK_RATE;
@@ -564,7 +1004,18 @@ int main() {
       if(button5.is_button_pressed()) {
         Serial.print(F("Button 5 pressed!\n"));
       }
-      
+      /*
+        // Display Serial Commands:
+        printUnusedStack();       
+        clearSerialInput(); // Read any Serial data.
+        Serial.print(F("\ntype: \n"));
+        Serial.print(F("b - open existing bin file\n"));
+        Serial.print(F("c - convert file to csv\n"));
+        Serial.print(F("l - list files\n"));
+        Serial.print(F("p - print data to Serial\n"));
+        Serial.print(F("r - record data\n"));
+        Serial.print(F("t - test without logging\n"));
+      */
       if(currentMillis > updateButtonTime) {
         updateAllButtonHistory();
         updateButtonTime = currentMillis + UPDATE_BUTTON_FREQUENCY;
